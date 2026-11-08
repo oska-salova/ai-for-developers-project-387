@@ -1,0 +1,600 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Календарь звонков",
+    "version": "0.0.0"
+  },
+  "tags": [],
+  "paths": {
+    "/api/meeting-types": {
+      "get": {
+        "operationId": "MeetingTypes_list",
+        "description": "Список типов встреч владельца.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ со списком типов встреч.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingTypeList"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ответ на непредвиденную ошибку сервера; подробности наружу не отдаются.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "MeetingTypes_create",
+        "description": "Создание типа встречи.",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Успешный ответ на создание типа встречи.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingTypeCreatedBody"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ответ на запрос, поля которого не прошли проверку.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ответ на непредвиденную ошибку сервера; подробности наружу не отдаются.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMeetingTypeRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meeting-types/{id}/slots": {
+      "get": {
+        "operationId": "MeetingTypes_slots",
+        "description": "Полная сетка слотов типа встречи на окно записи.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ с сеткой слотов типа встречи.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotsEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ответ на неизвестный маршрут или отсутствующий ресурс.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ответ на непредвиденную ошибку сервера; подробности наружу не отдаются.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meetings": {
+      "get": {
+        "operationId": "Meetings_list",
+        "description": "Предстоящие встречи владельца, без параметров.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ со списком предстоящих встреч.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingList"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ответ на непредвиденную ошибку сервера; подробности наружу не отдаются.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "Meetings_create",
+        "description": "Запись гостя на свободный слот.",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Успешный ответ на запись гостя.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingCreatedBody"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ответ на запрос, поля которого не прошли проверку.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ответ на неизвестный маршрут или отсутствующий ресурс.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ответ на попытку занять уже занятый слот; без данных о чужой встрече.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ответ на непредвиденную ошибку сервера; подробности наружу не отдаются.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMeetingRequest"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateMeetingRequest": {
+        "type": "object",
+        "required": [
+          "meetingTypeId",
+          "start",
+          "guestName",
+          "guestEmail"
+        ],
+        "properties": {
+          "meetingTypeId": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string",
+            "description": "Мгновение начала в ISO 8601 UTC с суффиксом Z."
+          },
+          "guestName": {
+            "type": "string"
+          },
+          "guestEmail": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Поля, которые гость присылает при записи на слот."
+      },
+      "CreateMeetingTypeRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "durationMinutes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Поля, которые владелец присылает при создании типа встречи."
+      },
+      "ErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Один из кодов: validation_error, not_found, slot_conflict, internal_error."
+          },
+          "message": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ErrorField"
+            },
+            "description": "Неверные поля запроса; заполняется только для validation_error."
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Машиночитаемый код и текст ошибки."
+      },
+      "ErrorBodyEnvelope": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Единая рамка ошибок API."
+      },
+      "ErrorField": {
+        "type": "object",
+        "required": [
+          "field",
+          "message"
+        ],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Имя поля тела запроса."
+          },
+          "message": {
+            "type": "string",
+            "description": "Сообщение об ошибке, которое интерфейс показывает дословно."
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Поле, значение которого не прошло валидацию."
+      },
+      "Meeting": {
+        "type": "object",
+        "required": [
+          "id",
+          "start",
+          "guestName",
+          "guestEmail",
+          "meetingType"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string",
+            "description": "Мгновение начала в ISO 8601 UTC с суффиксом Z."
+          },
+          "guestName": {
+            "type": "string"
+          },
+          "guestEmail": {
+            "type": "string"
+          },
+          "meetingType": {
+            "$ref": "#/components/schemas/MeetingTypeSummary"
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Забронированный интервал в календаре владельца."
+      },
+      "MeetingCreatedBody": {
+        "type": "object",
+        "required": [
+          "meeting"
+        ],
+        "properties": {
+          "meeting": {
+            "$ref": "#/components/schemas/Meeting"
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Тело успешного ответа на запись гостя."
+      },
+      "MeetingList": {
+        "type": "object",
+        "required": [
+          "meetings"
+        ],
+        "properties": {
+          "meetings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Meeting"
+            },
+            "description": "Предстоящие встречи по возрастанию старта."
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Ответ со списком предстоящих встреч владельца."
+      },
+      "MeetingType": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "durationMinutes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Шаблон бронирования: что владелец предлагает гостю."
+      },
+      "MeetingTypeCreatedBody": {
+        "type": "object",
+        "required": [
+          "meetingType"
+        ],
+        "properties": {
+          "meetingType": {
+            "$ref": "#/components/schemas/MeetingType"
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Тело успешного ответа на создание типа встречи."
+      },
+      "MeetingTypeList": {
+        "type": "object",
+        "required": [
+          "meetingTypes"
+        ],
+        "properties": {
+          "meetingTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingType"
+            }
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Ответ со списком типов встреч."
+      },
+      "MeetingTypeSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "durationMinutes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Сводка типа встречи внутри встречи: ссылка на неизменяемый тип, не снимок."
+      },
+      "Slot": {
+        "type": "object",
+        "required": [
+          "start",
+          "available"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Мгновение начала в ISO 8601 UTC с суффиксом Z."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Можно ли записаться на этот старт."
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Старт встречи в сетке слотов."
+      },
+      "SlotDay": {
+        "type": "object",
+        "required": [
+          "date",
+          "slots"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Календарный день владельца, YYYY-MM-DD."
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Slot"
+            },
+            "description": "Старты каждые 15 минут с 09:00 по 17:45."
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Полная сетка стартов одного календарного дня владельца."
+      },
+      "SlotWindow": {
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Первый день окна, YYYY-MM-DD в зоне владельца."
+          },
+          "end": {
+            "type": "string",
+            "description": "Последний день окна включительно, YYYY-MM-DD в зоне владельца."
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Границы окна записи в календарных днях владельца."
+      },
+      "SlotsEnvelope": {
+        "type": "object",
+        "required": [
+          "window",
+          "timezone",
+          "days"
+        ],
+        "properties": {
+          "window": {
+            "$ref": "#/components/schemas/SlotWindow"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Часовая зона владельца: Europe/Moscow."
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlotDay"
+            },
+            "description": "Ровно 14 дней окна, начиная с сегодняшнего."
+          }
+        },
+        "additionalProperties": {
+          "not": {}
+        },
+        "description": "Окно записи, часовой пояс владельца и дни с полной сеткой стартов."
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001",
+      "description": "Локальный сервер",
+      "variables": {}
+    }
+  ]
+}

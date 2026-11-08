@@ -1,0 +1,47 @@
+version: 2
+
+updates:
+  # Freshly published releases wait a week before a pull request opens.
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      backend:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      frontend:
+        patterns: ["*"]
+    ignore:
+      # typescript-eslint, pulled in by eslint-config-next, does not support
+      # TypeScript 7 yet and eslint-config-next requires eslint 9.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /contract
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      contract:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

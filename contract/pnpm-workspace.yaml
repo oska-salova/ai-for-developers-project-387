@@ -1,0 +1,18 @@
+# pnpm 12 reads package-level settings from this file instead of the `pnpm`
+# field in package.json. This package is not a workspace: the file exists only
+# because that is where the settings live now.
+#
+# One Alloy version only: @typespec/http-client-js 0.16.3 wants
+# @alloy-js/core ^0.25.0 while its emitter-framework wants 0.24.1, and the
+# runtime refuses to load ("Multiple versions of Alloy are loaded"). Without
+# this override the SDK emitter does not start at all.
+overrides:
+  "@alloy-js/core": 0.25.0
+  "@alloy-js/typescript": 0.25.0
+  # GHSA-g3hv-75wg-m249: ReDoS in minimatch <11, reachable only through the
+  # dev-time openapi-typescript toolchain. Same pin as in frontend.
+  minimatch@<11: 11.0.3
+  # @scalar/json-magic (via @typespec/openapi3) pins undici 7.24.4, which has
+  # published advisories; 7.30.1 is the patched 7.x release. Revisit when the
+  # TypeSpec emitter updates its Scalar dependencies.
+  undici@7.24.4: 7.30.1

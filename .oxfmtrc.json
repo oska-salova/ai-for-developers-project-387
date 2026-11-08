@@ -1,0 +1,15 @@
+{
+  "ignorePatterns": [
+    ".github/workflows/hexlet-check.yml",
+    ".agents/**",
+    "**/pnpm-lock.yaml",
+    "**/CHANGELOG.md",
+    "**/dist/**",
+    "**/.next/**",
+    "**/node_modules/**",
+    "contract/openapi/**",
+    "contract/tsp-output/**",
+    "frontend/src/lib/api/generated/**",
+    "backend/src/generated/**"
+  ]
+}

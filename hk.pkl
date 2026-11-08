@@ -1,0 +1,85 @@
+// hk runs the fast checks on staged files, the full set on push, and CI runs
+// `hk check --all` — see mise.toml. Versions come from mise.toml, never from here.
+amends "package://github.com/jdx/hk/releases/download/v2.9.0/hk@2.9.0#/Config.pkl"
+
+local fast = new Mapping<String, Step> {
+    ["format"] {
+        glob = List("**/*.ts", "**/*.tsx", "**/*.json", "**/*.md", "**/*.css", "**/*.yml", "**/*.yaml")
+        check = "oxfmt --check {{files}}"
+        fix = "oxfmt {{files}}"
+    }
+    ["oxlint"] {
+        glob = List("backend/src/**/*.ts")
+        check = "oxlint --deny-warnings {{files}}"
+        fix = "oxlint --fix {{files}}"
+    }
+    ["eslint"] {
+        glob = List("frontend/src/**/*.ts", "frontend/src/**/*.tsx", "frontend/next.config.ts", "frontend/eslint.config.mjs")
+        check = "pnpm --dir frontend lint"
+    }
+    ["typos"] {
+        glob = List("**/*")
+        check = "typos --force-exclude {{files}}"
+    }
+    ["secrets"] {
+        glob = List("**/*")
+        check = "betterleaks dir {{files}}"
+    }
+    ["workflows"] {
+        glob = List(".github/workflows/*.yml", ".github/workflows/*.yaml", ".github/dependabot.yml")
+        check = "jactionlint {{files}}"
+    }
+}
+
+local all = (fast) {
+    ["types"] {
+        glob = List("backend/src/**/*.ts", "backend/tsconfig.json", "frontend/src/**/*.ts", "frontend/src/**/*.tsx", "frontend/tsconfig.json", "frontend/next.config.ts")
+        check = "pnpm --dir backend typecheck && pnpm --dir frontend typecheck"
+    }
+    ["knip"] {
+        glob = List("backend/src/**/*.ts", "frontend/src/**/*.ts", "frontend/src/**/*.tsx", "**/package.json", "**/knip.json")
+        check = "knip -D backend && knip -D frontend"
+    }
+    ["tests"] {
+        glob = List("backend/src/**/*.ts", "frontend/src/**/*.ts", "frontend/src/**/*.tsx", "**/package.json", "**/vitest.config.*")
+        check = "pnpm --dir backend test:coverage && pnpm --dir frontend test:coverage"
+    }
+    ["agents"] {
+        glob = List("AGENTS.md", "frontend/AGENTS.md")
+        check = "agnix --strict ."
+    }
+}
+
+local commitMsg = new Mapping<String, Step> {
+    ["commitlint"] {
+        // The commit message path is quoted: repository paths may contain
+        // spaces (this checkout lives under "AI course"), and hk substitutes
+        // the placeholder verbatim.
+
+        check = "commitlint --edit \"{{commit_msg_file}}\""
+    }
+}
+
+hooks {
+    // Fast checks on staged files; `fix` rewrites the files it can.
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = fast
+    }
+    // Whole-project checks before the branch leaves the machine.
+    ["pre-push"] {
+        steps = all
+    }
+    ["commit-msg"] {
+        steps = commitMsg
+    }
+    // The aggregate command: pre-push plus the commit message check on request.
+    ["check"] {
+        steps = all
+    }
+    ["fix"] {
+        fix = true
+        steps = all
+    }
+}

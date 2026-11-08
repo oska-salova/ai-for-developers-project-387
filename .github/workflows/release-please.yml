@@ -1,0 +1,37 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+# Repository default workflow permissions are read-only, and this workflow
+# starts empty too: the job grants exactly what it needs. A human reviews and
+# merges the release PR; nothing is approved or merged automatically.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Release PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Tags and the release PR branch.
+      contents: write
+      # Labels and issue notifications created by release-please.
+      issues: write
+      # The release pull requests themselves.
+      pull-requests: write
+    steps:
+      # No checkout: the action reads the config and the manifest through the
+      # GitHub API. The release PR is created with the standard GITHUB_TOKEN,
+      # so it does not trigger CI — an expected limitation, not a bug.
+      - name: Run release-please
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

@@ -1,0 +1,90 @@
+# One toolchain for developers, git hooks and CI: `mise install`, then `mise run check`.
+# Versions are pinned; CI installs the same set from this file.
+[tools]
+node = "24.14.1"
+pnpm = "12.15.0"
+pkl = "0.32.2"
+hk = "2.9.0"
+oxlint = "1.90.0"
+"npm:oxfmt" = "0.75.0"
+"npm:knip" = "6.43.0"
+typos = "1.51.1"
+shellcheck = "0.11.0"
+jactionlint = "2.3.0"
+betterleaks = "1.9.0"
+osv-scanner = "2.7.0"
+"ubi:agent-sh/agnix" = "0.59.3"
+"npm:@commitlint/cli" = "21.2.4"
+
+[tasks.deps]
+description = "Install package dependencies from the lockfiles"
+run = [
+  "pnpm --dir backend install --frozen-lockfile",
+  "pnpm --dir frontend install --frozen-lockfile",
+  "pnpm --dir contract install --frozen-lockfile",
+]
+
+[tasks.setup]
+description = "Install dependencies and the git hooks"
+depends = ["deps"]
+run = "hk install"
+
+[tasks."contract:build"]
+description = "Generate OpenAPI, the frontend SDK and the backend types from TypeSpec"
+run = [
+  "pnpm --dir contract compile",
+  # Turbopack does not rewrite the SDK's `.js` imports to `.ts`, so the generated
+  # package is compiled once and the app imports its `dist/`. Source maps are
+  # skipped: they are large base64 blobs that the typos check cannot read.
+  "rm -rf frontend/src/lib/api/generated/dist",
+  "pnpm --dir frontend exec tsc -p src/lib/api/generated/tsconfig.json --sourceMap false --declarationMap false",
+  "pnpm --dir contract exec openapi-typescript openapi/openapi.json -o ../backend/src/generated/openapi.d.ts",
+]
+
+[tasks."contract:check"]
+description = "Regenerate the contract and fail when the committed artifacts drift"
+run = """
+set -e
+mise run contract:build
+changed=$(git status --porcelain --untracked-files=all -- contract/openapi frontend/src/lib/api/generated backend/src/generated)
+if [ -n "$changed" ]; then
+  printf '%s\n' "$changed" >&2
+  echo "Generated contract artifacts are stale. Run 'mise run contract:build' and commit the result." >&2
+  exit 1
+fi
+"""
+
+[tasks."sdk:check"]
+description = "Fail when application code reaches for HTTP directly instead of the generated SDK"
+run = """
+matches=$(grep -RInE '(^|[^A-Za-z])(fetch|XMLHttpRequest|axios|ofetch|ky|got)([^A-Za-z]|$)|node:(http|https)' frontend/src --include='*.ts' --include='*.tsx' --exclude-dir=generated || true)
+if [ -n "$matches" ]; then
+  printf '%s\n' "$matches" >&2
+  echo "Call the backend through the generated SDK in frontend/src/lib/api.ts." >&2
+  exit 1
+fi
+"""
+
+[tasks.check]
+description = "Run the fast gate locally and in CI: contract, SDK usage, format, linters, types, knip, tests"
+run = ["mise run contract:check", "mise run sdk:check", "hk check --all"]
+
+[tasks.verify]
+description = "Full command for local and CI: mise run check plus the Playwright tests"
+run = ["mise run check", "mise run e2e"]
+
+[tasks.test]
+description = "Run both test suites with the coverage thresholds"
+run = ["pnpm --dir backend test:coverage", "pnpm --dir frontend test:coverage"]
+
+[tasks.e2e]
+description = "Build the frontend and run the Playwright tests against it"
+run = "pnpm --dir frontend e2e"
+
+[tasks.security]
+description = "Slow checks: vulnerability database, full git history, online workflow checks"
+run = ["osv-scanner scan source -r .", "betterleaks git .", "jactionlint --online"]
+
+[tasks.fix]
+description = "Apply the automatic fixes"
+run = "hk fix --all"

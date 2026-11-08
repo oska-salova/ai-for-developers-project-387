@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Security scans depend on external data, so they also run weekly.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs the tools pinned in mise.toml — the same ones used locally.
+      - name: Setup mise
+        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Cheap and independent of the code: fail on a non-Conventional PR title
+      # before the heavy steps run. Only the title is checked, not `(#N)`.
+      - name: Lint pull request title
+        if: github.event_name == 'pull_request'
+        run: printf '%s\n' "$PR_TITLE" | commitlint
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+
+      - name: Install dependencies
+        run: mise run deps
+
+      - name: Install Chromium for Playwright
+        run: mise exec -- pnpm --dir frontend exec playwright install --with-deps chromium
+
+      # One command for both locally and in CI: contract drift, SDK-only audit,
+      # format, linters, types, knip, tests and the browser scenario.
+      - name: Run verify
+        run: mise run verify
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # betterleaks scans the full history.
+          fetch-depth: 0
+
+      - name: Setup mise
+        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: mise run deps
+
+      - name: Run security scans
+        run: mise run security
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

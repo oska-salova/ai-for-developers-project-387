@@ -1,0 +1,8 @@
+# Spell checking rules.
+# `.agents/` holds third-party agent skills installed verbatim from
+# https://github.com/mattpocock/skills via `npx skills@latest add mattpocock/skills`.
+# They are re-installed on updates, so edits made here would be lost: exclude the
+# directory instead of patching upstream wording.
+# Path exclusion reviewed: (review 2027-01-31) — re-check when the toolchain is updated.
+[files]
+extend-exclude = [".agents/"]

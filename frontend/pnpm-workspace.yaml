@@ -1,0 +1,10 @@
+allowBuilds:
+  sharp: false
+  unrs-resolver: false
+
+# GHSA-g3hv-75wg-m249: ReDoS in minimatch <11, reachable only through the
+# dev-time ESLint toolchain. No fix exists in the 3.x/10.x lines, so both are
+# pinned to the patched major. Revisit when eslint and typescript-eslint ship
+# the fixed version themselves.
+overrides:
+  minimatch@<11: 11.0.3

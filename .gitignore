@@ -1,0 +1,18 @@
+# VS Code workspace
+*.code-workspace
+
+# Dependencies
+node_modules/
+
+# Build output (the compiled SDK under frontend/src/lib/api/generated/dist is
+# generated but committed: it is what the app imports).
+/backend/dist/
+
+# Test coverage reports
+coverage/
+
+# TypeSpec compiler scratch output; every emitter writes to an explicit path.
+contract/tsp-output/
+
+# Local tool configuration
+.mise.local.toml

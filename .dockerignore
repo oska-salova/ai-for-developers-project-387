@@ -1,0 +1,17 @@
+# Dependencies and local build output are rebuilt inside the image.
+# Do not exclude frontend/src/lib/api/generated/dist: the committed SDK is
+# imported as source, so the frontend build needs it.
+
+**/node_modules
+**/.next
+**/coverage
+**/test-results
+**/playwright-report
+**/blob-report
+backend/dist
+contract/tsp-output
+.git
+.DS_Store
+*.tsbuildinfo
+.env
+.env.*

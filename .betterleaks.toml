@@ -1,0 +1,10 @@
+# Secrets scanning rules (gitleaks-compatible).
+# Build output and dependencies are generated, not source: scanning them yields
+# false positives from bundled framework internals.
+# Path exclusions are reviewed: (review 2027-01-31) — betterleaks has no expiry
+# support, so the date is checked by hand when the toolchain is updated.
+title = "call-calendar"
+
+[allowlist]
+description = "Generated output and installed dependencies"
+paths = ['''node_modules/''', '''\.next/''', '''dist/''', '''pnpm-lock\.yaml''']

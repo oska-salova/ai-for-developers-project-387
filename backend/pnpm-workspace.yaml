@@ -1,0 +1,5 @@
+allowBuilds:
+  esbuild: true
+# pnpm 12 reads package-level settings from this file instead of the
+# `pnpm` field in package.json. This package is not a workspace: the file
+# exists only because that is where the setting lives now.

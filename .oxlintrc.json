@@ -1,0 +1,18 @@
+{
+  "plugins": ["typescript", "unicorn", "oxc", "import"],
+  "env": {
+    "node": true,
+    "es2024": true
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/.next/**",
+    "**/node_modules/**",
+    "**/coverage/**",
+    "backend/src/generated/**"
+  ]
+}

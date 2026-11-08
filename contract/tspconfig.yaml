@@ -1,0 +1,17 @@
+emit:
+  - "@typespec/openapi3"
+  - "@typespec/http-client-js"
+
+options:
+  "@typespec/openapi3":
+    emitter-output-dir: "{project-root}/openapi"
+    # Pin the wire version explicitly: a default bump to 3.1 would silently
+    # change the shapes openapi-typescript and the compliance validator see.
+    openapi-versions: ["3.0.0"]
+    file-type: "json"
+    output-file: "openapi.json"
+    # Responses must match the contract exactly, extra fields included.
+    seal-object-schemas: true
+  "@typespec/http-client-js":
+    emitter-output-dir: "{project-root}/../frontend/src/lib/api/generated"
+    package-name: "call-calendar-sdk"

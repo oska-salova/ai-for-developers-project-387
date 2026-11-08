@@ -1,0 +1,7 @@
+# Validation rules for agent configs (AGENTS.md, skills, MCP, hooks).
+# `.agents/` holds third-party skills installed verbatim from
+# https://github.com/mattpocock/skills via `npx skills@latest add mattpocock/skills`.
+# Upstream files are re-installed on updates, so they are not ours to fix:
+# one of them has non-string frontmatter metadata, which fails `--strict`.
+# Path exclusion reviewed: (review 2027-01-31) — re-check when the toolchain is updated.
+exclude = ["node_modules/**", ".git/**", "target/**", ".agents/**"]
