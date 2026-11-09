@@ -7,3 +7,10 @@ ignores:
     rule: artipacked
     reason: "Upstream-generated workflow, not editable in this repository"
     expires: "2027-01-31"
+  # opencode.yml is started by a comment, which the dangerous-triggers rule reports
+  # unconditionally. Only the repository owner can start the job, GITHUB_TOKEN stays
+  # read-only, and the checkout never runs code from a pull request.
+  - file: ".github/workflows/opencode.yml"
+    rule: dangerous-triggers
+    reason: "Comment-triggered agent; the job requires author_association == OWNER"
+    expires: "2027-06-30"
