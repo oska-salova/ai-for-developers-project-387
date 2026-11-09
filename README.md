@@ -66,6 +66,33 @@ docker run --rm -e PORT=8080 -p 8080:8080 call-calendar
 Контракт API описан на TypeSpec в `contract/`: `mise run contract:build` генерирует OpenAPI,
 SDK и типы бэкенда, `mise run contract:check` проверяет, что сгенерированное закоммичено.
 
+## Проверки
+
+```bash
+mise run check    # быстрый гейт: контракт, SDK, формат, линтеры, типы, knip, тесты
+mise run verify   # то же плюс Playwright; эту команду запускает CI
+mise run security # уязвимости зависимостей, история git, онлайн-проверка workflow
+```
+
+В CI (`.github/workflows/ci.yml`) две джобы: `Verify` — `mise run verify` и `Security` —
+`mise run security`. Релизы ведёт `release-please.yml`, проверку Хекслета — `hexlet-check.yml`.
+
+## Агент в комментариях
+
+`.github/workflows/opencode.yml` запускает OpenCode в GitHub Actions: напишите `/oc` или
+`/opencode` в комментарии к issue, PR или к строке во вкладке «Files» — агент прочитает задачу,
+внесёт правки и либо ответит в треде, либо откроет PR. Команда должна стоять в начале
+комментария или после пробела в той же строке.
+
+- Модель — `opencode/deepseek-v4.1-flash`, сессия не публикуется на opencode.ai.
+- Запускать может только владелец репозитория: комментарии остальных job не запускают.
+- Перед первым использованием нужно установить приложение
+  [opencode-agent](https://github.com/apps/opencode-agent) и добавить секрет `OPENCODE_API_KEY`.
+- `GITHUB_TOKEN` в job только на чтение; комментарии и пуш выполняются токеном приложения,
+  полученным через OIDC. Тайм-аут — 30 минут, одновременно в одном issue или PR идёт один запуск.
+- В CI агенту доступны `AGENTS.md`, `docs/agents/` и скиллы из `.agents/skills/`, но не `gh`:
+  `to-spec`, `to-tickets`, `triage` и `wayfinder` работают только локально.
+
 ## Использование
 
 В приложении два типа пользователей: владелец календаря (задаёт типы встреч и смотрит записи)
