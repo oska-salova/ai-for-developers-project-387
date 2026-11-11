@@ -1,6 +1,8 @@
 name: OpenCode
 
 # Run the agent from a comment: `/oc <task>` or `/opencode <task>`.
+# A comment naming an issue-tracker skill (`/oc запусти скил to-spec`)
+# runs it with issues: write; all other tasks keep the read-only GITHUB_TOKEN.
 # https://opencode.ai/docs/github/
 
 on:
@@ -19,11 +21,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  route:
+    name: Route
+    if: |
+      github.event.comment.author_association == 'OWNER' &&
+      (contains(github.event.comment.body, ' /oc') ||
+       startsWith(github.event.comment.body, '/oc') ||
+       contains(github.event.comment.body, ' /opencode') ||
+       startsWith(github.event.comment.body, '/opencode'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      skill: ${{ steps.parse.outputs.skill }}
+    steps:
+      - name: Parse skill
+        id: parse
+        env:
+          BODY: ${{ github.event.comment.body }}
+          IS_ISSUE: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request == null }}
+        run: |
+          skill=""
+          if [ "$IS_ISSUE" = "true" ]; then
+            skill=$(printf '%s\n' "$BODY" \
+              | grep -oiE '(скил[^[:space:]]*|skill)[[:space:]]*:?[[:space:]]*@?(to-spec|to-tickets|triage)|/(oc|opencode)[[:space:]]+@?(to-spec|to-tickets|triage)' \
+              | head -n1 \
+              | grep -oiE '(to-spec|to-tickets|triage)' \
+              | tr '[:upper:]' '[:lower:]')
+          fi
+          echo "skill=$skill" >> "$GITHUB_OUTPUT"
+
   opencode:
     name: Agent
+    needs: route
     # The repository is public. Without the owner check anybody could spend the
     # API key and drive the agent with a prompt-injected comment.
     if: |
+      needs.route.outputs.skill == '' &&
       github.event.comment.author_association == 'OWNER' &&
       (contains(github.event.comment.body, ' /oc') ||
        startsWith(github.event.comment.body, '/oc') ||
@@ -61,3 +94,30 @@ jobs:
           model: opencode/deepseek-v4.1-flash
           # Public repository: do not publish the session on opencode.ai.
           share: false
+
+  skill:
+    name: Skill
+    needs: route
+    if: needs.route.outputs.skill != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run OpenCode
+        uses: anomalyco/opencode/github@17b79f4e0c16dcff200b0417567ed22aeb2d7166 # github-v1.2.28
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: opencode/deepseek-v4.1-flash
+          share: false
+          use_github_token: true
