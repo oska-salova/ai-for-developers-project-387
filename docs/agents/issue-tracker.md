@@ -7,6 +7,7 @@ Historical context: the original specification and decisions of the first projec
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
+- **Publish specs and tickets**: when `to-spec` or `to-tickets` create an issue, pass the triage label in the same command: `gh issue create --label ready-for-agent ...`. Do not create the issue first and add the label afterwards with `gh issue edit`: `opencode-triage.yml` reads `github.event.issue.labels` in the `issues.opened` payload, so a later label arrives too late.
 - **Read an issue**: `gh issue view <number> --json number,title,body,labels,comments`.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
 - **Make an issue a sub-issue of a parent**: `gh issue create --parent <parent> ...`, or `gh issue edit <parent> --add-sub-issue <child>` afterwards (`gh` 2.94+). Older `gh`: `gh api --method POST repos/<owner>/<repo>/issues/<parent>/sub_issues -F sub_issue_id=<child-db-id>` (database id, as in **Blocking** below). Without sub-issues, put `Part of #<parent>` at the top of the child body.
