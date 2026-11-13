@@ -127,6 +127,13 @@ jobs:
       # The review itself is a comment; GitHub serves PR comments via issues.
       issues: write
     steps:
+      # The CLI snapshots the workspace with a temporary commit before it starts,
+      # and in `use_github_token` mode the action does not configure an identity.
+      - name: Configure Git identity
+        run: |
+          git config --global user.name "opencode-review"
+          git config --global user.email "opencode-review@users.noreply.github.com"
+
       # The trusted workspace: agent instructions, configuration and verdict files
       # come from the default branch only.
       - name: Checkout default branch
