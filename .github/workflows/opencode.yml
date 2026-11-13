@@ -209,6 +209,14 @@ jobs:
             exit 1
           fi
 
+          # The publishing token can edit workflow files, but the agent must not
+          # land changes to them through it: such edits are a human's job in a
+          # normal pull request, where CI and review can see them.
+          if git diff --name-only "origin/$BASE...HEAD" -- .github/workflows | grep -q .; then
+            echo "::error::Ветка меняет .github/workflows/*: такие правки выносятся отдельным PR человеком"
+            exit 1
+          fi
+
           # The helper reads the token from the environment at call time: nothing
           # lands in .git/config. Single quotes are deliberate — `$GH_TOKEN` must
           # stay literal in the config and expand only when git calls the helper.
