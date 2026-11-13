@@ -21,6 +21,10 @@ jobs:
     name: Verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      # The title lint reads the live pull request title, not the event payload.
+      pull-requests: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -35,11 +39,16 @@ jobs:
 
       # Cheap and independent of the code: fail on a non-Conventional PR title
       # before the heavy steps run. Only the title is checked, not `(#N)`.
+      # The title is read from the API, not from the event payload: the publishing
+      # step may have corrected it after this event was created, and a re-run must
+      # see the current value.
       - name: Lint pull request title
         if: github.event_name == 'pull_request'
-        run: printf '%s\n' "$PR_TITLE" | commitlint
+        shell: bash # runs with pipefail, so a failed `gh` call cannot look green
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr view "$PR" --json title --jq .title | commitlint
 
       - name: Install dependencies
         run: mise run deps
