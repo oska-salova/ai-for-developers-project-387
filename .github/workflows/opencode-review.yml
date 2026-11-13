@@ -119,7 +119,9 @@ jobs:
       # Read the code, the criteria and the template at the PR head.
       contents: read
       # Read the diff, the body and the files of the pull request.
-      pull-requests: read
+      # `write` is required to comment on a pull request: `issues: write` alone
+      # covers issue threads, not PR threads.
+      pull-requests: write
       # Verify that the run links quoted in the body belong to this head.
       actions: read
       # The review itself is a comment; GitHub serves PR comments via issues.
