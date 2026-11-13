@@ -106,8 +106,9 @@ jobs:
   implement:
     name: Implement spec
     needs: route
-    # The routing job names the skill. A code-writing run is exclusive: two agents
-    # in the same files would overwrite each other.
+    # The routing job names the skill. `agent-code` serialises implement runs only:
+    # the generic `Agent` job keeps its own per-issue group, so `/oc` in another
+    # issue can run in parallel and edit the same files.
     if: needs.route.outputs.skill == 'implement-spec'
     runs-on: ubuntu-latest
     # Three tickets, worktrees, the full gate per ticket and a review pass.
@@ -130,7 +131,8 @@ jobs:
         with:
           # Ticket branches are merged into an integration branch locally.
           fetch-depth: 0
-          # Only the publishing step writes; keep the token out of .git/config.
+          # The push step and the app token handle writes; keep credentials out of
+          # .git/config.
           persist-credentials: false
 
       - name: Setup mise
@@ -159,9 +161,9 @@ jobs:
         uses: anomalyco/opencode/github@17b79f4e0c16dcff200b0417567ed22aeb2d7166 # github-v1.2.28
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-          # Read-only: `gh issue view` for the spec and the tickets. Creating the
-          # pull request is the publishing step's job, so no write token reaches
-          # the model, and workflow files stay out of its reach entirely.
+          # Read-only `GITHUB_TOKEN`: enough for `gh issue view` on the spec and
+          # the tickets. Pushes use the app token supplied by the action, and the
+          # publishing token is never exposed to the model.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           model: opencode/deepseek-v4.1-flash
@@ -223,9 +225,20 @@ jobs:
           # shellcheck disable=SC2016
           git config --global credential.https://github.com.helper \
             '!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f'
+          # A rerun may reuse a branch name left by a failed attempt: pushing to
+          # it would fail on a non-fast-forward, so publish to a fresh name and
+          # keep the previous attempt intact.
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            branch="$branch-$GITHUB_RUN_ID"
+            git checkout -b "$branch"
+          fi
           git push -u origin "$branch"
 
-          if gh pr view "$branch" >/dev/null 2>&1; then
+          # A closed pull request still resolves by branch name: treat only an open
+          # one as existing, otherwise a rerun would edit the closed thread.
+          state=$(gh pr view "$branch" --json state --jq .state 2>/dev/null || true)
+
+          if [ "$state" = "OPEN" ]; then
             if [ -s .scratch/pr-body.md ]; then
               gh pr edit "$branch" --body-file .scratch/pr-body.md
             fi
