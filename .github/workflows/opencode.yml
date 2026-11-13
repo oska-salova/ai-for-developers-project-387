@@ -219,12 +219,10 @@ jobs:
             exit 1
           fi
 
-          # The helper reads the token from the environment at call time: nothing
-          # lands in .git/config. Single quotes are deliberate — `$GH_TOKEN` must
-          # stay literal in the config and expand only when git calls the helper.
-          # shellcheck disable=SC2016
-          git config --global credential.https://github.com.helper \
-            '!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f'
+          # `gh` supplies git credentials from GH_TOKEN at call time: the token
+          # never lands in .git/config. A hand-written helper must name the token
+          # owner as the user — fine-grained tokens reject `x-access-token`.
+          gh auth setup-git
           # A rerun may reuse a branch name left by a failed attempt: pushing to
           # it would fail on a non-fast-forward, so publish to a fresh name and
           # keep the previous attempt intact. `RUN_ATTEMPT` grows on every rerun
