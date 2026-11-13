@@ -80,6 +80,8 @@ Playwright и `head-sha.txt` с полным head SHA, ссылкой на пр�
 именно код проверял браузер. Релизы ведёт `release-please.yml`, проверку Хекслета —
 `hexlet-check.yml`.
 
+Репетиционный прогон `implement-spec` выполнен 14.11.2026.
+
 ## Агент в комментариях
 
 `.github/workflows/opencode.yml` запускает OpenCode в GitHub Actions: напишите `/oc` или
