@@ -14,10 +14,3 @@ ignores:
     rule: dangerous-triggers
     reason: "Comment-triggered agent; the job requires author_association == OWNER"
     expires: "2027-06-30"
-  # The rule reports every workflow_run unconditionally. The review job rejects
-  # fork heads, checks out the pull request only as data into a subdirectory, and
-  # never executes its code; secrets cover one model call and one PR comment.
-  - file: ".github/workflows/opencode-review.yml"
-    rule: dangerous-triggers
-    reason: "Default-branch review file; fork heads rejected, PR code never executed"
-    expires: "2027-06-30"
