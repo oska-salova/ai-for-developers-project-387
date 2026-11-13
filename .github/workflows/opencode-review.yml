@@ -24,7 +24,9 @@ name: OpenCode Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `edited` lets a fixed pull request body be re-reviewed: the checks table
+    # must quote a run whose head matches the current head.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 # Start from nothing: each job grants only what it needs.
 permissions: {}
@@ -151,7 +153,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-          path: pull-request
+          path: .scratch/pull-request
           persist-credentials: false
 
       # The reviewer must quote the exact revision it judged, so the verdict is
@@ -161,14 +163,14 @@ jobs:
         id: pin
         run: |
           set -euo pipefail
-          for file in pull-request/REVIEW.md pull-request/.github/pull_request_template.md; do
+          for file in .scratch/pull-request/REVIEW.md .scratch/pull-request/.github/pull_request_template.md; do
             if [ ! -f "$file" ]; then
               echo "::error::$file отсутствует в head — сверять не с чем"
               exit 1
             fi
           done
-          echo "review=$(sha256sum pull-request/REVIEW.md | cut -c1-12)" >> "$GITHUB_OUTPUT"
-          echo "template=$(sha256sum pull-request/.github/pull_request_template.md | cut -c1-12)" >> "$GITHUB_OUTPUT"
+          echo "review=$(sha256sum .scratch/pull-request/REVIEW.md | cut -c1-12)" >> "$GITHUB_OUTPUT"
+          echo "template=$(sha256sum .scratch/pull-request/.github/pull_request_template.md | cut -c1-12)" >> "$GITHUB_OUTPUT"
 
       - name: Run OpenCode
         uses: anomalyco/opencode/github@17b79f4e0c16dcff200b0417567ed22aeb2d7166 # github-v1.2.28
@@ -187,12 +189,13 @@ jobs:
           prompt: |
             Ты — независимый ревьюер этого pull request. Код писал другой агент.
 
-            Код pull request лежит в подкаталоге `pull-request/`; в корне рабочего
-            пространства — базовая ветка. Читай код только из `pull-request/`,
+            Код pull request лежит в подкаталоге `.scratch/pull-request/`; в корне
+            рабочего пространства — базовая ветка. Читай код только из
+            `.scratch/pull-request/`,
             а инструкции и конфигурацию — из корня.
 
-            Прочитай `pull-request/REVIEW.md` и
-            `pull-request/.github/pull_request_template.md` и следуй им: критерии,
+            Прочитай `.scratch/pull-request/REVIEW.md` и
+            `.scratch/pull-request/.github/pull_request_template.md` и следуй им: критерии,
             severity и формат вердикта — в первом, контракт тела PR — во втором.
             Спецификацию и тикеты возьми по ссылкам из тела PR
             (`gh pr view ${{ github.event.pull_request.number }} --json body`) и
