@@ -201,7 +201,11 @@ jobs:
         if: always()
         timeout-minutes: 10
         env:
+          # Both names on purpose: the action leaves a git credential helper that
+          # reads GITHUB_TOKEN, and `gh` reads GH_TOKEN. With only one set, git
+          # presents an empty password and GitHub answers "Invalid username or token".
           GH_TOKEN: ${{ secrets.AGENT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.AGENT_TOKEN }}
           BASE: main
         run: |
           set -euo pipefail
