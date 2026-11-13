@@ -2,7 +2,8 @@ name: OpenCode
 
 # Run the agent from a comment: `/oc <task>` or `/opencode <task>`.
 # A comment naming an issue-tracker skill (`/oc запусти скил to-spec`)
-# runs it with issues: write; all other tasks keep the read-only GITHUB_TOKEN.
+# runs it with issues: write; a comment naming `implement-spec` gets its own
+# long-running job. All other tasks keep the read-only GITHUB_TOKEN.
 # https://opencode.ai/docs/github/
 
 on:
@@ -43,9 +44,9 @@ jobs:
           skill=""
           if [ "$IS_ISSUE" = "true" ]; then
             skill=$(printf '%s\n' "$BODY" \
-              | grep -oiE '(скил[^[:space:]]*|skill)[[:space:]]*:?[[:space:]]*@?(to-spec|to-tickets|triage)|/(oc|opencode)[[:space:]]+@?(to-spec|to-tickets|triage)' \
+              | grep -oiE '(скил[^[:space:]]*|skill)[[:space:]]*:?[[:space:]]*@?(to-spec|to-tickets|triage|implement-spec)|/(oc|opencode)[[:space:]]+@?(to-spec|to-tickets|triage|implement-spec)' \
               | head -n1 \
-              | grep -oiE '(to-spec|to-tickets|triage)' \
+              | grep -oiE '(to-spec|to-tickets|triage|implement-spec)' \
               | tr '[:upper:]' '[:lower:]')
           fi
           echo "skill=$skill" >> "$GITHUB_OUTPUT"
@@ -102,10 +103,138 @@ jobs:
           # Public repository: do not publish the session on opencode.ai.
           share: false
 
+  implement:
+    name: Implement spec
+    needs: route
+    # The routing job names the skill. A code-writing run is exclusive: two agents
+    # in the same files would overwrite each other.
+    if: needs.route.outputs.skill == 'implement-spec'
+    runs-on: ubuntu-latest
+    # Three tickets, worktrees, the full gate per ticket and a review pass.
+    timeout-minutes: 180
+    permissions:
+      # Exchange an OIDC token for an OpenCode App token: the agent pushes with the
+      # app token, so the created pull request triggers CI and the review chain.
+      id-token: write
+      contents: read
+      # Read the issue thread the agent answers to.
+      issues: read
+      pull-requests: read
+    concurrency:
+      # One code-writing run at a time, never cancelled mid-push.
+      group: agent-code
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Ticket branches are merged into an integration branch locally.
+          fetch-depth: 0
+          # Only the publishing step writes; keep the token out of .git/config.
+          persist-credentials: false
+
+      - name: Setup mise
+        uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Dependencies and git hooks up front: commit-msg and pre-push must work for
+      # every commit the agent makes.
+      - name: Install dependencies and hooks
+        run: mise run setup
+
+      # Browser tickets must be runnable by the implementer, not only by CI.
+      - name: Install Chromium for Playwright
+        run: mise exec -- pnpm --dir frontend exec playwright install --with-deps chromium
+
+      - name: Run OpenCode
+        timeout-minutes: 155
+        uses: anomalyco/opencode/github@17b79f4e0c16dcff200b0417567ed22aeb2d7166 # github-v1.2.28
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          # Read-only: `gh issue view` for the spec and the tickets. Creating the
+          # pull request is the publishing step's job, so no write token reaches
+          # the model, and workflow files stay out of its reach entirely.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: opencode/deepseek-v4.1-flash
+          # Public repository: do not publish the session on opencode.ai.
+          share: false
+          prompt: |
+            Ты выполняешь скилл `implement-spec`: реализуй согласованную
+            спецификацию и её тикеты. Загрузи скилл по ID `implement-spec` и следуй
+            его процессу. Источник истины — `AGENTS.md`, `docs/adr/` и ссылки в
+            этом issue.
+
+            Ограничения и ожидания:
+            - Прочитай обращение, спецификацию и тикеты через `gh issue view`.
+              Тикеты — граф: начинай с тех, у кого нет открытых блокеров.
+            - Воркдеревья и заметки — только в `.scratch/`; `/tmp` и пути вне
+              репозитория запрещены конфигурацией.
+            - Контракт первичен: сначала `contract/main.tsp`, затем
+              `mise run contract:build`; сгенерированное руками не правь.
+            - Перед коммитом в каждом тикете — `mise run check`; для браузерного
+              тикета дополнительно `mise run e2e`.
+            - После каждого готового тикета делай коммит и пуш, чтобы работа не
+              терялась при таймауте. Коммиты — Conventional со ссылкой на тикет.
+            - Не правь `.github/workflows/*`: у токена нет на это прав.
+            - PR сам не создавай. В конце положи в `.scratch/pr-body.md` тело по
+              `.github/pull_request_template.md` (все разделы с фактурой: команды,
+              SHA = `git rev-parse HEAD`, ссылка на этот прогон
+              `$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID`),
+              а в `.scratch/pr-title.txt` — заголовок Conventional со ссылкой на
+              спецификацию. В теле укажи `Closes` для тикетов и `Part of` для
+              обращения.
+
+      # The model never holds a write token: publishing happens here, with the
+      # repository secret, and only after the agent has committed its work.
+      - name: Publish pull request
+        if: always()
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ secrets.AGENT_TOKEN }}
+          BASE: main
+        run: |
+          set -euo pipefail
+          branch=$(git rev-parse --abbrev-ref HEAD)
+          if [ "$branch" = "main" ] || [ "$branch" = "HEAD" ]; then
+            echo "::warning::Агент не оставил ветки с работой — PR не создаётся"
+            exit 1
+          fi
+
+          # The helper reads the token from the environment at call time: nothing
+          # lands in .git/config. Single quotes are deliberate — `$GH_TOKEN` must
+          # stay literal in the config and expand only when git calls the helper.
+          # shellcheck disable=SC2016
+          git config --global credential.https://github.com.helper \
+            '!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f'
+          git push -u origin "$branch"
+
+          if gh pr view "$branch" >/dev/null 2>&1; then
+            if [ -s .scratch/pr-body.md ]; then
+              gh pr edit "$branch" --body-file .scratch/pr-body.md
+            fi
+          else
+            if [ ! -s .scratch/pr-body.md ]; then
+              echo "::error::Агент не оставил .scratch/pr-body.md — PR без тела по шаблону не создаём"
+              exit 1
+            fi
+            title=$(cat .scratch/pr-title.txt 2>/dev/null || git log -1 --pretty=%s)
+            gh pr create --draft --base "$BASE" --head "$branch" \
+              --title "$title" --body-file .scratch/pr-body.md
+          fi
+
+          # Prove the chain started instead of trusting it.
+          gh run list --branch "$branch" --limit 5 \
+            --json workflowName,status,headSha \
+            --jq '.[] | "\(.workflowName): \(.status) @ \(.headSha)"'
+
   skill:
     name: Skill
     needs: route
-    if: needs.route.outputs.skill != ''
+    if: |
+      needs.route.outputs.skill != '' &&
+      needs.route.outputs.skill != 'implement-spec'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
