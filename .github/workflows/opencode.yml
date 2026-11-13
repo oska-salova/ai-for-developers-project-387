@@ -227,9 +227,10 @@ jobs:
             '!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f'
           # A rerun may reuse a branch name left by a failed attempt: pushing to
           # it would fail on a non-fast-forward, so publish to a fresh name and
-          # keep the previous attempt intact.
+          # keep the previous attempt intact. `RUN_ATTEMPT` grows on every rerun
+          # of the same run, so two reruns of one workflow run do not collide.
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            branch="$branch-$GITHUB_RUN_ID"
+            branch="$branch-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
             git checkout -b "$branch"
           fi
           git push -u origin "$branch"
