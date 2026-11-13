@@ -4,36 +4,115 @@ name: OpenCode Review
 # with no write access to code. Criteria live in REVIEW.md, the PR body contract
 # lives in .github/pull_request_template.md, and both are read at the PR head.
 #
-# The review is triggered by the "Review budget" gate through `workflow_run`, so
-# GitHub executes THIS FILE FROM THE DEFAULT BRANCH, not from the pull request:
-# a pull request cannot weaken the reviewer that judges it.
+# Two jobs, in order:
+#   1. `budget` counts the reviews that already ran for this pull request in the
+#      Actions history and refuses before the model is called when the limit is
+#      reached. The counter is not a PR comment: a comment can be rewritten, the
+#      run history cannot.
+#   2. `review` runs only when the budget allowed it. `needs: budget` guarantees
+#      the refusal happens first.
 #
-# Secrets are available to `workflow_run`, so the job is limited to same-repository
-# pull requests. The workspace itself is checked out from the default branch: the
-# pull request lands in `pull-request/` as content only, so it cannot add agent
-# instructions, hooks or tool servers to the workspace the reviewer runs in.
+# Limits stated plainly: the budget holds only while run history is preserved and
+# this file is unchanged (a pull request that rewrites it is refused), and a
+# repository admin can change either. Every pull request starts a fresh budget,
+# so the limit bounds one review loop, not the total spend on an issue.
+#
+# The OpenCode action supports `pull_request` but not `workflow_run`, so this file
+# is executed from the pull request; the guard below and the file-identity check
+# in `budget` are the practical defence.
 # https://opencode.ai/docs/github/
 
 on:
-  workflow_run:
-    workflows: ["Review budget"]
-    types: [completed]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
-# Start from nothing: the job grants only what it needs.
+# Start from nothing: each job grants only what it needs.
 permissions: {}
 
 concurrency:
-  # A newer gate run makes this review stale.
-  group: review-${{ github.event.workflow_run.pull_requests[0].number }}
+  # A new push makes the running review stale: cancel it and review the new head.
+  group: review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  budget:
+    name: Review budget
+    # Drafts, forks, dependabot and infrastructure pull requests start no review,
+    # so they must not spend a budget slot either.
+    if: |
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]' &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      # The counter lives in the run history and is read-only here.
+      actions: read
+      contents: read
+    outputs:
+      allowed: ${{ steps.count.outputs.allowed }}
+    steps:
+      # A pull request that rewrites this file must not grade itself. The check
+      # is best effort against accidental edits; a deliberate rewrite is visible
+      # in the diff and needs a human.
+      - name: Refuse when the review workflow itself was edited
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          path=.github/workflows/opencode-review.yml
+          base=$(gh api "repos/$GITHUB_REPOSITORY/contents/$path?ref=$BASE" --jq .sha)
+          head=$(gh api "repos/$GITHUB_REPOSITORY/contents/$path?ref=$HEAD" --jq .sha)
+          if [ "$base" != "$head" ]; then
+            echo "::error::PR меняет воркфлоу авторевью ($path): вынесите правку в отдельный PR"
+            exit 1
+          fi
+
+      - name: Count reviews in the run history
+        id: count
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Repository variable, so the limit is a setting and not a commit.
+          LIMIT: ${{ vars.REVIEW_RUN_LIMIT || '3' }}
+        run: |
+          set -euo pipefail
+          # Only reviews that completed are counted: a refusal must not inflate
+          # the number, and a run cancelled by a newer push never reached the
+          # model.
+          used=$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/opencode-review.yml/runs?per_page=100" \
+            --jq ".workflow_runs[]
+                  | select(.id != $GITHUB_RUN_ID)
+                  | select(.conclusion == \"success\")
+                  | select([.pull_requests[]?.number] | index($PR))
+                  | .run_attempt" \
+            | awk '{ sum += $1 } END { print sum + 0 }')
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+          {
+            echo "## Бюджет авторевью"
+            echo
+            echo "- Использовано попыток: $used из $LIMIT"
+            echo "- SHA: \`$HEAD_SHA\`"
+            echo "- Прогон: $run_url"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$used" -ge "$LIMIT" ]; then
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Лимит $LIMIT попыток авторевью на этот PR исчерпан (использовано $used). SHA $HEAD_SHA. Логи: $run_url"
+            exit 1
+          fi
+          echo "allowed=true" >> "$GITHUB_OUTPUT"
+
   review:
     name: Review
-    if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+    needs: budget
+    if: needs.budget.outputs.allowed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -46,28 +125,12 @@ jobs:
       # The review itself is a comment; GitHub serves PR comments via issues.
       issues: write
     steps:
-      # `workflow_run` carries the pull request only through this payload, and it
-      # can be empty when the association is lost. Fail loudly instead of
-      # commenting on the wrong thread. Only digits reach the output.
-      - name: Resolve pull request number
-        id: pr
-        env:
-          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
-        run: |
-          set -euo pipefail
-          case "${PR:-}" in
-            '' | *[!0-9]*)
-              echo "::error::Не удалось определить номер PR из payload workflow_run"
-              exit 1
-              ;;
-          esac
-          echo "number=$PR" >> "$GITHUB_OUTPUT"
-
       # The trusted workspace: agent instructions, configuration and verdict files
       # come from the default branch only.
       - name: Checkout default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
           # The reviewer never pushes; keep the token out of .git/config.
           persist-credentials: false
@@ -77,7 +140,7 @@ jobs:
       - name: Checkout pull request into a subdirectory
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           path: pull-request
           persist-credentials: false
@@ -116,15 +179,15 @@ jobs:
             Ты — независимый ревьюер этого pull request. Код писал другой агент.
 
             Код pull request лежит в подкаталоге `pull-request/`; в корне рабочего
-            пространства — доверенная копия ветки по умолчанию. Читай код только
-            из `pull-request/`, а инструкции и конфигурацию бери из корня.
+            пространства — базовая ветка. Читай код только из `pull-request/`,
+            а инструкции и конфигурацию — из корня.
 
             Прочитай `pull-request/REVIEW.md` и
             `pull-request/.github/pull_request_template.md` и следуй им: критерии,
             severity и формат вердикта — в первом, контракт тела PR — во втором.
             Спецификацию и тикеты возьми по ссылкам из тела PR
-            (`gh pr view ${{ steps.pr.outputs.number }} --json body`) и прочитай
-            через `gh issue view <номер>`.
+            (`gh pr view ${{ github.event.pull_request.number }} --json body`) и
+            прочитай через `gh issue view <номер>`.
 
             Ограничения: не правь файлы, не коммить, не меняй ветки и issue, не
             оставляй комментарии к строкам диффа. Если `REVIEW.md` прочитать не
@@ -133,7 +196,7 @@ jobs:
             Механика, которой нет в документах:
             - в заголовке вердикта укажи `REVIEW.md@${{ steps.pin.outputs.review }}`,
               `шаблон@${{ steps.pin.outputs.template }}` и
-              `head@${{ github.event.workflow_run.head_sha }}`;
+              `head@${{ github.event.pull_request.head.sha }}`;
             - прежде чем засчитать проверку, убедись, что прогон относится к этому
               коду: `gh api repos/${{ github.repository }}/actions/runs/<id> --jq
               '{conclusion, head_sha}'` и сравни `head_sha` с head выше;
@@ -144,6 +207,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           marker='<!-- opencode-review -->'
@@ -153,4 +217,4 @@ jobs:
           else
             printf '%s\n\nРевьюер не оставил вердикта; см. лог прогона.\n' "$marker" > .scratch/comment.md
           fi
-          gh pr comment "${{ steps.pr.outputs.number }}" --body-file .scratch/comment.md
+          gh pr comment "$PR" --body-file .scratch/comment.md
