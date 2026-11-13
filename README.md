@@ -78,7 +78,7 @@ mise run security # уязвимости зависимостей, истори�
 `mise run security`. `Verify` дополнительно выгружает артефакт `playwright-report`: HTML-отчёт
 Playwright и `head-sha.txt` с полным head SHA, ссылкой на прогон и датой, поэтому видно, какой
 именно код проверял браузер. Релизы ведёт `release-please.yml`, проверку Хекслета —
-`hexlet-check.yml`.
+`hexlet-check.yml`. Репетиционный прогон `implement-spec` выполнен 14.11.2026.
 
 ## Агент в комментариях
 
