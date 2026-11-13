@@ -225,10 +225,27 @@ jobs:
             exit 1
           fi
 
-          # `gh` supplies git credentials from GH_TOKEN at call time: the token
-          # never lands in .git/config. A hand-written helper must name the token
-          # owner as the user — fine-grained tokens reject `x-access-token`.
-          gh auth setup-git
+          # Publishing talks to the API only: git credentials in this step are
+          # controlled by the action's own helper and have caused nothing but 401s.
+          # The agent pushes the branch itself with the app token.
+          head_sha=$(git rev-parse HEAD)
+          # A missing branch (HTTP 404) is a normal case; any other failure must be
+          # reported as itself, not disguised as "no branch on remote".
+          if ! out=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" --jq .object.sha 2>&1); then
+            case "$out" in
+              *"HTTP 404"*) remote_sha="" ;;
+              *)
+                echo "::error::Не удалось проверить ветку через API: $out"
+                exit 1
+                ;;
+            esac
+          else
+            remote_sha="$out"
+          fi
+          if [ "$remote_sha" != "$head_sha" ]; then
+            echo "::error::Ветка $branch на remote не содержит head ($head_sha, на remote ${remote_sha:-нет}). Агент должен запушить ветку сам."
+            exit 1
+          fi
 
           # The body is the contract of the pull request: without it neither path
           # may publish, otherwise a green step would leave a PR outside the
@@ -245,29 +262,6 @@ jobs:
             title=$(git log -1 --pretty=%s)
           fi
 
-          # The agent pushes the branch itself with the app token; pushing again is
-          # only a safety net for the case where it did not. That net is the only
-          # path that needs git credentials.
-          remote_has_head=no
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            git fetch --quiet origin "$branch"
-            if git merge-base --is-ancestor HEAD "origin/$branch"; then
-              remote_has_head=yes
-            fi
-          fi
-
-          if [ "$remote_has_head" = "no" ]; then
-            # The agent pushes with the app token; this path covers the case it did
-            # not. If the remote branch diverged, publish to a fresh name instead of
-            # failing on a non-fast-forward.
-            if ! git push -u origin "$branch"; then
-              branch="$branch-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-              git checkout -b "$branch"
-              git push -u origin "$branch"
-            fi
-          fi
-          echo "branch=$branch remote_has_head=$remote_has_head"
-
           # A closed pull request still resolves by branch name: treat only an open
           # one as existing, otherwise a rerun would edit the closed thread.
           state=$(gh pr view "$branch" --json state --jq .state 2>/dev/null || true)
@@ -275,7 +269,7 @@ jobs:
           if [ "$state" = "OPEN" ]; then
             # The agent's CLI may have opened a draft pull request whose title is
             # the model's last message: bring title and body in line with the
-            # template before CI and the reviewer read them.
+            # template before a human reads them.
             gh pr edit "$branch" --title "$title" --body-file .scratch/pr-body.md
           else
             gh pr create --draft --base "$BASE" --head "$branch" \
