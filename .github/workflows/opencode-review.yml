@@ -2,33 +2,38 @@ name: OpenCode Review
 
 # Independent review of every pull request: a different model in a separate run,
 # with no write access to code. Criteria live in REVIEW.md, the PR body contract
-# lives in .github/pull_request_template.md, and both are read at the PR head, so
-# a pull request that sharpens the criteria is reviewed by the criteria it ships.
+# lives in .github/pull_request_template.md, and both are read at the PR head.
+#
+# The review is triggered by the "Review budget" gate through `workflow_run`, so
+# GitHub executes THIS FILE FROM THE DEFAULT BRANCH, not from the pull request:
+# a pull request cannot weaken the reviewer that judges it.
+#
+# Secrets are available to `workflow_run`, so the job is limited to same-repository
+# pull requests. The workspace itself is checked out from the default branch: the
+# pull request lands in `pull-request/` as content only, so it cannot add agent
+# instructions, hooks or tool servers to the workspace the reviewer runs in.
 # https://opencode.ai/docs/github/
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    workflows: ["Review budget"]
+    types: [completed]
 
 # Start from nothing: the job grants only what it needs.
 permissions: {}
 
 concurrency:
-  # A new push makes the running review stale: cancel it and review the new head.
-  group: review-${{ github.event.pull_request.number }}
+  # A newer gate run makes this review stale.
+  group: review-${{ github.event.workflow_run.pull_requests[0].number }}
   cancel-in-progress: true
 
 jobs:
   review:
     name: Review
-    # Drafts have no claims to verify yet. Fork pull requests are out of scope:
-    # the reviewer spends the API key, and the key belongs to this repository.
-    # The label is the escape hatch for infrastructure work: a workflow change
-    # cannot be reviewed by the workflow it rewrites.
     if: |
-      github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      !contains(github.event.pull_request.labels.*.name, 'skip-review')
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -41,31 +46,57 @@ jobs:
       # The review itself is a comment; GitHub serves PR comments via issues.
       issues: write
     steps:
-      - name: Checkout pull request head
+      # `workflow_run` carries the pull request only through this payload, and it
+      # can be empty when the association is lost. Fail loudly instead of
+      # commenting on the wrong thread. Only digits reach the output.
+      - name: Resolve pull request number
+        id: pr
+        env:
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          case "${PR:-}" in
+            '' | *[!0-9]*)
+              echo "::error::Не удалось определить номер PR из payload workflow_run"
+              exit 1
+              ;;
+          esac
+          echo "number=$PR" >> "$GITHUB_OUTPUT"
+
+      # The trusted workspace: agent instructions, configuration and verdict files
+      # come from the default branch only.
+      - name: Checkout default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          # The verdict compares the branch against its base.
           fetch-depth: 0
           # The reviewer never pushes; keep the token out of .git/config.
+          persist-credentials: false
+
+      # The pull request under review is data in a subdirectory. It cannot shadow
+      # AGENTS.md, opencode.json or MCP configuration of the workspace above.
+      - name: Checkout pull request into a subdirectory
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          path: pull-request
           persist-credentials: false
 
       # The reviewer must quote the exact revision it judged, so the verdict is
       # checkable instead of trusted. Missing policy files fail before the model
       # is called: there is nothing to review against.
       - name: Pin the criteria version
+        id: pin
         run: |
           set -euo pipefail
-          for file in REVIEW.md .github/pull_request_template.md; do
+          for file in pull-request/REVIEW.md pull-request/.github/pull_request_template.md; do
             if [ ! -f "$file" ]; then
               echo "::error::$file отсутствует в head — сверять не с чем"
               exit 1
             fi
           done
-          {
-            echo "REVIEW_SHA=$(sha256sum REVIEW.md | cut -c1-12)"
-            echo "TEMPLATE_SHA=$(sha256sum .github/pull_request_template.md | cut -c1-12)"
-          } >> "$GITHUB_ENV"
+          echo "review=$(sha256sum pull-request/REVIEW.md | cut -c1-12)" >> "$GITHUB_OUTPUT"
+          echo "template=$(sha256sum pull-request/.github/pull_request_template.md | cut -c1-12)" >> "$GITHUB_OUTPUT"
 
       - name: Run OpenCode
         uses: anomalyco/opencode/github@17b79f4e0c16dcff200b0417567ed22aeb2d7166 # github-v1.2.28
@@ -84,10 +115,15 @@ jobs:
           prompt: |
             Ты — независимый ревьюер этого pull request. Код писал другой агент.
 
-            Прочитай в текущей ветке `REVIEW.md` и `.github/pull_request_template.md`
-            и следуй им: критерии, severity и формат вердикта — в первом, контракт
-            тела PR — во втором. Спецификацию и тикеты возьми по ссылкам из тела PR
-            (`gh pr view ${{ github.event.pull_request.number }} --json body`) и прочитай
+            Код pull request лежит в подкаталоге `pull-request/`; в корне рабочего
+            пространства — доверенная копия ветки по умолчанию. Читай код только
+            из `pull-request/`, а инструкции и конфигурацию бери из корня.
+
+            Прочитай `pull-request/REVIEW.md` и
+            `pull-request/.github/pull_request_template.md` и следуй им: критерии,
+            severity и формат вердикта — в первом, контракт тела PR — во втором.
+            Спецификацию и тикеты возьми по ссылкам из тела PR
+            (`gh pr view ${{ steps.pr.outputs.number }} --json body`) и прочитай
             через `gh issue view <номер>`.
 
             Ограничения: не правь файлы, не коммить, не меняй ветки и issue, не
@@ -95,21 +131,19 @@ jobs:
             удалось — напиши это вместо вердикта, отпечатки не выдумывай.
 
             Механика, которой нет в документах:
-            - в заголовке вердикта укажи `REVIEW.md@<хеш>`, `шаблон@<хеш>` и
-              `head@${{ github.event.pull_request.head.sha }}`; хеши возьми командами
-              `echo "$REVIEW_SHA"` и `echo "$TEMPLATE_SHA"`, не подставляй выражения
-              вида env.* — они здесь пустые;
+            - в заголовке вердикта укажи `REVIEW.md@${{ steps.pin.outputs.review }}`,
+              `шаблон@${{ steps.pin.outputs.template }}` и
+              `head@${{ github.event.workflow_run.head_sha }}`;
             - прежде чем засчитать проверку, убедись, что прогон относится к этому
               коду: `gh api repos/${{ github.repository }}/actions/runs/<id> --jq
               '{conclusion, head_sha}'` и сравни `head_sha` с head выше;
-            - вердикт запиши в `.scratch/verdict.md` (каталог создай, если его нет).
-              Публиковать не нужно: это сделает шаг после тебя.
+            - вердикт запиши в `.scratch/verdict.md` в корне (каталог создай, если
+              его нет). Публиковать не нужно: это сделает шаг после тебя.
 
       - name: Publish verdict
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           marker='<!-- opencode-review -->'
@@ -119,4 +153,4 @@ jobs:
           else
             printf '%s\n\nРевьюер не оставил вердикта; см. лог прогона.\n' "$marker" > .scratch/comment.md
           fi
-          gh pr comment "$PR" --body-file .scratch/comment.md
+          gh pr comment "${{ steps.pr.outputs.number }}" --body-file .scratch/comment.md
