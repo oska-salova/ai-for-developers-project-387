@@ -68,6 +68,8 @@ SDK и типы бэкенда, `mise run contract:check` проверяет, ч
 
 ## Проверки
 
+Репетиционный прогон `implement-spec` выполнен 14.11.2026.
+
 ```bash
 mise run check    # быстрый гейт: контракт, SDK, формат, линтеры, типы, knip, тесты
 mise run verify   # то же плюс Playwright; эту команду запускает CI
