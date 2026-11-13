@@ -117,10 +117,12 @@ jobs:
       # Exchange an OIDC token for an OpenCode App token: the agent pushes with the
       # app token, so the created pull request triggers CI and the review chain.
       id-token: write
-      contents: read
-      # Read the issue thread the agent answers to.
-      issues: read
-      pull-requests: read
+      # The publishing step creates the pull request and fixes its title and body.
+      # Events from GITHUB_TOKEN do not start workflows, so publishing never
+      # pretends to trigger CI; the push and the PR opening already did.
+      contents: write
+      issues: write
+      pull-requests: write
     concurrency:
       # One code-writing run at a time, never cancelled mid-push.
       group: agent-code
@@ -202,10 +204,10 @@ jobs:
         timeout-minutes: 10
         env:
           # Both names on purpose: the action leaves a git credential helper that
-          # reads GITHUB_TOKEN, and `gh` reads GH_TOKEN. With only one set, git
-          # presents an empty password and GitHub answers "Invalid username or token".
-          GH_TOKEN: ${{ secrets.AGENT_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.AGENT_TOKEN }}
+          # reads GITHUB_TOKEN, and `gh` reads GH_TOKEN. The default token now
+          # carries the write permissions granted above, so no PAT is involved.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE: main
         run: |
           set -euo pipefail

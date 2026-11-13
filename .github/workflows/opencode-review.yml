@@ -25,9 +25,10 @@ name: OpenCode Review
 
 on:
   pull_request:
-    # `edited` lets a fixed pull request body be re-reviewed: the checks table
-    # must quote a run whose head matches the current head.
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+    # No `edited`: the review does not judge the pull request body, so editing it
+    # must not spend a budget slot. A new verdict comes from a push or from
+    # `ready_for_review`.
+    types: [opened, synchronize, reopened, ready_for_review]
 
 # Start from nothing: each job grants only what it needs.
 permissions: {}
@@ -192,8 +193,9 @@ jobs:
 
           Прочитай `.scratch/pull-request/REVIEW.md` и
           `.scratch/pull-request/.github/pull_request_template.md` и следуй им:
-          критерии, severity и формат вердикта — в первом, контракт тела PR — во
-          втором. Спецификацию и тикеты возьми по ссылкам из тела PR
+          критерии, severity и формат вердикта — в первом. Тело PR не оценивай:
+          шаблон — договорённость для человека. Спецификацию и тикеты возьми по
+          ссылкам из тела PR
           (`gh pr view ${{ github.event.pull_request.number }} --json body`) и
           прочитай через `gh issue view <номер>`.
 
