@@ -231,7 +231,13 @@ jobs:
             echo "::error::Агент не оставил .scratch/pr-body.md — PR без тела по шаблону не создаём"
             exit 1
           fi
-          title=$(cat .scratch/pr-title.txt 2>/dev/null || git log -1 --pretty=%s)
+          # An empty file must not shadow the commit subject: the title is part of
+          # the same contract as the body.
+          if [ -s .scratch/pr-title.txt ]; then
+            title=$(cat .scratch/pr-title.txt)
+          else
+            title=$(git log -1 --pretty=%s)
+          fi
 
           # A closed pull request still resolves by branch name: treat only an open
           # one as existing, otherwise a rerun would edit the closed thread.
