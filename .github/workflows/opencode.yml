@@ -143,6 +143,13 @@ jobs:
       - name: Install dependencies and hooks
         run: mise run setup
 
+      # The CLI snapshots the workspace before it starts and in
+      # `use_github_token` mode does not configure an identity itself.
+      - name: Configure Git identity
+        run: |
+          git config --global user.name "opencode-agent"
+          git config --global user.email "opencode-agent@users.noreply.github.com"
+
       # Browser tickets must be runnable by the implementer, not only by CI.
       - name: Install Chromium for Playwright
         run: mise exec -- pnpm --dir frontend exec playwright install --with-deps chromium
