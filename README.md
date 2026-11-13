@@ -74,6 +74,8 @@ mise run verify   # то же плюс Playwright; эту команду зап�
 mise run security # уязвимости зависимостей, история git, онлайн-проверка workflow
 ```
 
+Репетиционный прогон `implement-spec` выполнен 14.11.2026.
+
 В CI (`.github/workflows/ci.yml`) две джобы: `Verify` — `mise run verify` и `Security` —
 `mise run security`. `Verify` дополнительно выгружает артефакт `playwright-report`: HTML-отчёт
 Playwright и `head-sha.txt` с полным head SHA, ссылкой на прогон и датой, поэтому видно, какой
