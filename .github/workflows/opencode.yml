@@ -251,11 +251,18 @@ jobs:
             git fetch --quiet origin "$branch"
             if git merge-base --is-ancestor HEAD "origin/$branch"; then
               remote_has_head=yes
-            else
-              git push origin "$branch"
             fi
-          else
-            git push -u origin "$branch"
+          fi
+
+          if [ "$remote_has_head" = "no" ]; then
+            # The agent pushes with the app token; this path covers the case it did
+            # not. If the remote branch diverged, publish to a fresh name instead of
+            # failing on a non-fast-forward.
+            if ! git push -u origin "$branch"; then
+              branch="$branch-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+              git checkout -b "$branch"
+              git push -u origin "$branch"
+            fi
           fi
           echo "branch=$branch remote_has_head=$remote_has_head"
 
