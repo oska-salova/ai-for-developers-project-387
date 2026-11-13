@@ -14,3 +14,10 @@ ignores:
     rule: dangerous-triggers
     reason: "Comment-triggered agent; the job requires author_association == OWNER"
     expires: "2027-06-30"
+  # The reviewer installs a pinned CLI in its own job. Adding a 214 MB platform
+  # binary to mise.toml for every developer is worse: npm verifies the registry
+  # tarball and the version is exact.
+  - file: ".github/workflows/opencode-review.yml"
+    rule: adhoc-packages
+    reason: "opencode CLI pinned to 1.19.5; npm verifies the tarball"
+    expires: "2027-06-30"

@@ -17,10 +17,11 @@ name: OpenCode Review
 # repository admin can change either. Every pull request starts a fresh budget,
 # so the limit bounds one review loop, not the total spend on an issue.
 #
-# The OpenCode action supports `pull_request` but not `workflow_run`, so this file
-# is executed from the pull request; the guard below and the file-identity check
-# in `budget` are the practical defence.
-# https://opencode.ai/docs/github/
+# The review calls the CLI directly (`opencode run`) instead of the GitHub action:
+# the action asserts write permission of the event actor and pushes a snapshot
+# branch, and both break on pull requests created by the agent bot. The CLI needs
+# only a prompt; publishing the verdict is our own step.
+# https://opencode.ai/docs/cli/
 
 on:
   pull_request:
@@ -129,8 +130,7 @@ jobs:
       # The review itself is a comment; GitHub serves PR comments via issues.
       issues: write
     steps:
-      # The CLI snapshots the workspace with a temporary commit before it starts,
-      # and in `use_github_token` mode the action does not configure an identity.
+      # The CLI snapshots the workspace with a temporary commit before it starts.
       - name: Configure Git identity
         run: |
           git config --global user.name "opencode-review"
@@ -172,48 +172,63 @@ jobs:
           echo "review=$(sha256sum .scratch/pull-request/REVIEW.md | cut -c1-12)" >> "$GITHUB_OUTPUT"
           echo "template=$(sha256sum .scratch/pull-request/.github/pull_request_template.md | cut -c1-12)" >> "$GITHUB_OUTPUT"
 
-      - name: Run OpenCode
-        uses: anomalyco/opencode/github@17b79f4e0c16dcff200b0417567ed22aeb2d7166 # github-v1.2.28
+      # Pinned through npm: the registry verifies the tarball, while the curl
+      # installer would execute an unverified script with this job's token.
+      - name: Install OpenCode CLI
+        run: |
+          set -euo pipefail
+          npm install --global opencode-ai@1.19.5
+
+      # The prompt lives in a file: it is too long for a command-line argument.
+      - name: Write the review prompt
+        run: |
+          mkdir -p .scratch
+          cat > .scratch/prompt.md <<'PROMPT'
+          Ты — независимый ревьюер этого pull request. Код писал другой агент.
+
+          Код pull request лежит в подкаталоге `.scratch/pull-request/`; в корне
+          рабочего пространства — базовая ветка. Читай код только из
+          `.scratch/pull-request/`, а инструкции и конфигурацию — из корня.
+
+          Прочитай `.scratch/pull-request/REVIEW.md` и
+          `.scratch/pull-request/.github/pull_request_template.md` и следуй им:
+          критерии, severity и формат вердикта — в первом, контракт тела PR — во
+          втором. Спецификацию и тикеты возьми по ссылкам из тела PR
+          (`gh pr view ${{ github.event.pull_request.number }} --json body`) и
+          прочитай через `gh issue view <номер>`.
+
+          Ограничения: не коммить, не меняй ветки и issue, не оставляй
+          комментарии к строкам диффа. Если `REVIEW.md` прочитать не удалось —
+          напиши это вместо вердикта, отпечатки не выдумывай.
+
+          Механика, которой нет в документах:
+          - в заголовке вердикта укажи `REVIEW.md@${{ steps.pin.outputs.review }}`,
+            `шаблон@${{ steps.pin.outputs.template }}` и
+            `head@${{ github.event.pull_request.head.sha }}`;
+          - прежде чем засчитать проверку, убедись, что прогон относится к этому
+            коду: `gh api repos/${{ github.repository }}/actions/runs/<id> --jq
+            '{conclusion, head_sha}'` и сравни `head_sha` с head выше;
+          - вердикт запиши в `.scratch/verdict.md`. Публиковать не нужно: это
+            сделает шаг после тебя.
+          PROMPT
+
+      - name: Run the reviewer
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          # A different vendor from the implementer (deepseek-v4.1-flash):
-          # independent review means a different set of blind spots, not just a
-          # different run.
-          model: opencode/glm-5.3
-          # Public repository: do not publish the session on opencode.ai.
-          share: false
-          use_github_token: true
-          prompt: |
-            Ты — независимый ревьюер этого pull request. Код писал другой агент.
-
-            Код pull request лежит в подкаталоге `.scratch/pull-request/`; в корне
-            рабочего пространства — базовая ветка. Читай код только из
-            `.scratch/pull-request/`,
-            а инструкции и конфигурацию — из корня.
-
-            Прочитай `.scratch/pull-request/REVIEW.md` и
-            `.scratch/pull-request/.github/pull_request_template.md` и следуй им: критерии,
-            severity и формат вердикта — в первом, контракт тела PR — во втором.
-            Спецификацию и тикеты возьми по ссылкам из тела PR
-            (`gh pr view ${{ github.event.pull_request.number }} --json body`) и
-            прочитай через `gh issue view <номер>`.
-
-            Ограничения: не правь файлы, не коммить, не меняй ветки и issue, не
-            оставляй комментарии к строкам диффа. Если `REVIEW.md` прочитать не
-            удалось — напиши это вместо вердикта, отпечатки не выдумывай.
-
-            Механика, которой нет в документах:
-            - в заголовке вердикта укажи `REVIEW.md@${{ steps.pin.outputs.review }}`,
-              `шаблон@${{ steps.pin.outputs.template }}` и
-              `head@${{ github.event.pull_request.head.sha }}`;
-            - прежде чем засчитать проверку, убедись, что прогон относится к этому
-              коду: `gh api repos/${{ github.repository }}/actions/runs/<id> --jq
-              '{conclusion, head_sha}'` и сравни `head_sha` с head выше;
-            - вердикт запиши в `.scratch/verdict.md` в корне (каталог создай, если
-              его нет). Публиковать не нужно: это сделает шаг после тебя.
+        run: |
+          set -euo pipefail
+          # `--auto` approves permission prompts: nobody can answer them in CI and
+          # a hanging run burns the whole timeout.
+          if ! opencode run --model opencode/glm-5.3 --auto "$(cat .scratch/prompt.md)" \
+              > .scratch/stdout.txt 2>&1; then
+            echo "::warning::CLI завершился с ошибкой; публикую stdout как вердикт"
+          fi
+          if [ ! -s .scratch/verdict.md ]; then
+            cp .scratch/stdout.txt .scratch/verdict.md
+          fi
+          sed -E 's/\x1B\[[0-9;]*[mK]//g' .scratch/verdict.md > .scratch/verdict.clean
+          mv .scratch/verdict.clean .scratch/verdict.md
 
       - name: Publish verdict
         if: always()
@@ -225,7 +240,9 @@ jobs:
           marker='<!-- opencode-review -->'
           mkdir -p .scratch
           if [ -s .scratch/verdict.md ]; then
-            { printf '%s\n\n' "$marker"; cat .scratch/verdict.md; } > .scratch/comment.md
+            # The model repeats the marker from REVIEW.md; keep exactly one.
+            grep -v '<!-- opencode-review -->' .scratch/verdict.md > .scratch/verdict.body || true
+            { printf '%s\n\n' "$marker"; cat .scratch/verdict.body; } > .scratch/comment.md
           else
             printf '%s\n\nРевьюер не оставил вердикта; см. лог прогона.\n' "$marker" > .scratch/comment.md
           fi
