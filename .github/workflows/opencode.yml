@@ -123,6 +123,8 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      # Re-running the gate after the title fix needs Actions write.
+      actions: write
     concurrency:
       # One code-writing run at a time, never cancelled mid-push.
       group: agent-code
@@ -278,6 +280,14 @@ jobs:
             gh pr create --draft --base "$BASE" --head "$branch" \
               --title "$title" --body-file .scratch/pr-body.md
           fi
+
+          # The CLI opened the pull request with the model's own title, so the gate
+          # may have started before the title was corrected. Re-run its failed
+          # attempts: the title lint now reads the current title from the API.
+          for id in $(gh run list --branch "$branch" --status failure --limit 5 \
+            --json databaseId --jq '.[].databaseId'); do
+            gh run rerun "$id" --failed || true
+          done
 
           # Prove the chain started instead of trusting it.
           gh run list --branch "$branch" --limit 5 \
