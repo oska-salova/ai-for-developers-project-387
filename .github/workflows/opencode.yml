@@ -225,15 +225,23 @@ jobs:
             exit 1
           fi
 
-          # `gh` supplies git credentials from GH_TOKEN at call time: the token
-          # never lands in .git/config. A hand-written helper must name the token
-          # owner as the user — fine-grained tokens reject `x-access-token`.
           # Publishing talks to the API only: git credentials in this step are
           # controlled by the action's own helper and have caused nothing but 401s.
           # The agent pushes the branch itself with the app token.
           head_sha=$(git rev-parse HEAD)
-          remote_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" \
-            --jq .object.sha 2>/dev/null || true)
+          # A missing branch (HTTP 404) is a normal case; any other failure must be
+          # reported as itself, not disguised as "no branch on remote".
+          if ! out=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" --jq .object.sha 2>&1); then
+            case "$out" in
+              *"HTTP 404"*) remote_sha="" ;;
+              *)
+                echo "::error::Не удалось проверить ветку через API: $out"
+                exit 1
+                ;;
+            esac
+          else
+            remote_sha="$out"
+          fi
           if [ "$remote_sha" != "$head_sha" ]; then
             echo "::error::Ветка $branch на remote не содержит head ($head_sha, на remote ${remote_sha:-нет}). Агент должен запушить ветку сам."
             exit 1
