@@ -219,36 +219,57 @@ jobs:
             exit 1
           fi
 
-          # The helper reads the token from the environment at call time: nothing
-          # lands in .git/config. Single quotes are deliberate — `$GH_TOKEN` must
-          # stay literal in the config and expand only when git calls the helper.
-          # shellcheck disable=SC2016
-          git config --global credential.https://github.com.helper \
-            '!f() { echo "username=x-access-token"; echo "password=$GH_TOKEN"; }; f'
-          # A rerun may reuse a branch name left by a failed attempt: pushing to
-          # it would fail on a non-fast-forward, so publish to a fresh name and
-          # keep the previous attempt intact. `RUN_ATTEMPT` grows on every rerun
-          # of the same run, so two reruns of one workflow run do not collide.
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            branch="$branch-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-            git checkout -b "$branch"
+          # `gh` supplies git credentials from GH_TOKEN at call time: the token
+          # never lands in .git/config. A hand-written helper must name the token
+          # owner as the user — fine-grained tokens reject `x-access-token`.
+          gh auth setup-git
+
+          # The body is the contract of the pull request: without it neither path
+          # may publish, otherwise a green step would leave a PR outside the
+          # template.
+          if [ ! -s .scratch/pr-body.md ]; then
+            echo "::error::Агент не оставил .scratch/pr-body.md — PR без тела по шаблону не создаём"
+            exit 1
           fi
-          git push -u origin "$branch"
+          # An empty file must not shadow the commit subject: the title is part of
+          # the same contract as the body.
+          if [ -s .scratch/pr-title.txt ]; then
+            title=$(cat .scratch/pr-title.txt)
+          else
+            title=$(git log -1 --pretty=%s)
+          fi
 
           # A closed pull request still resolves by branch name: treat only an open
           # one as existing, otherwise a rerun would edit the closed thread.
           state=$(gh pr view "$branch" --json state --jq .state 2>/dev/null || true)
 
           if [ "$state" = "OPEN" ]; then
-            if [ -s .scratch/pr-body.md ]; then
-              gh pr edit "$branch" --body-file .scratch/pr-body.md
+            # The agent's CLI pushes the branch and opens a draft pull request whose
+            # title is the model's last message: bring title and body in line with
+            # the template before CI and the reviewer read them.
+            git fetch origin "$branch"
+            if git merge-base --is-ancestor "origin/$branch" HEAD; then
+              git push origin "$branch"
+              gh pr edit "$branch" --title "$title" --body-file .scratch/pr-body.md
+            else
+              # Local history diverged from the pushed branch: publish separately
+              # instead of failing on a non-fast-forward.
+              branch="$branch-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+              git checkout -b "$branch"
+              state=""
             fi
-          else
-            if [ ! -s .scratch/pr-body.md ]; then
-              echo "::error::Агент не оставил .scratch/pr-body.md — PR без тела по шаблону не создаём"
-              exit 1
+          fi
+
+          if [ "$state" != "OPEN" ]; then
+            # A rerun may reuse a branch name left by a failed attempt: pushing to
+            # it would fail on a non-fast-forward, so publish to a fresh name and
+            # keep the previous attempt intact. `RUN_ATTEMPT` grows on every rerun
+            # of the same run, so two reruns of one workflow run do not collide.
+            if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+              branch="$branch-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+              git checkout -b "$branch"
             fi
-            title=$(cat .scratch/pr-title.txt 2>/dev/null || git log -1 --pretty=%s)
+            git push -u origin "$branch"
             gh pr create --draft --base "$BASE" --head "$branch" \
               --title "$title" --body-file .scratch/pr-body.md
           fi
