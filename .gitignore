@@ -16,3 +16,7 @@ contract/tsp-output/
 
 # Local tool configuration
 .mise.local.toml
+
+# Scratch space for agents and one-off checks: worktrees, verdicts, PR bodies.
+# The rule lives in AGENTS.md: never use /tmp, write here and delete afterwards.
+.scratch/
