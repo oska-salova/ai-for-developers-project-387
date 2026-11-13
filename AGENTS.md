@@ -62,7 +62,7 @@
 
 - `.agents/skills/*` — вендорные скиллы, руками не правим: обновление перезапишет файлы. `.agents/` исключён из oxfmt и typos как чужой текст.
 - Если в комментарии `/oc` или `/opencode` назван скилл из `.agents/skills` («запусти скил to-spec», «по скиллу triage»), загрузи его через инструмент `skill` по точному ID и следуй его процессу. Пользователю не нужно писать `skill tool (id: ...)`. ID совпадают с именами: `triage`, `to-spec`, `to-tickets`.
-- В CI не используй `/tmp` и пути вне репозитория: политика `external_directory` стоит в `ask`, подтверждать её некому, и запуск зависает. Временные файлы создавай в `.scratch/` внутри репозитория и удаляй после.
+- В CI не используй `/tmp` и пути вне репозитория: политика `external_directory` стоит в `ask`, подтверждать её некому, и запуск зависает. Временные файлы создавай в `.scratch/` внутри репозитория и удаляй после. `opencode.json` в корне запрещает `/tmp`, `/var/folders` и их `private`-варианты: если инструмент отказывает по `external_directory`, переключись на `.scratch/`, а команду не повторяй.
 - Трекер задач — GitHub Issues `oska-salova/ai-for-developers-project-387` через `gh`: `docs/agents/issue-tracker.md`; метки триажа — `docs/agents/triage-labels.md`; доменные доки (`GLOSSARY.md`, `docs/adr/`) — `docs/agents/domain.md`.
 
 ## Не трогать
