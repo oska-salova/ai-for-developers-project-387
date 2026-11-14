@@ -125,3 +125,10 @@ export async function createMeeting(input: NewMeetingInput): Promise<Meeting> {
 
   return unwrap(result).meeting;
 }
+
+/** Cancels one upcoming meeting; the server answers 204 without a body. */
+export async function deleteMeeting(meetingId: string): Promise<void> {
+  const result = await apiClient.meetingsClient.cancel(meetingId);
+
+  unwrap(result);
+}
