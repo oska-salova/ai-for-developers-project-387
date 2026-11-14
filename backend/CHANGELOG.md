@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/oska-salova/ai-for-developers-project-387/compare/call-calendar-backend-v1.2.0...call-calendar-backend-v1.3.0) (2026-11-14)
+
+
+### Features
+
+* отмена предстоящей встречи владельцем ([#8](https://github.com/oska-salova/ai-for-developers-project-387/issues/8)) ([#43](https://github.com/oska-salova/ai-for-developers-project-387/issues/43)) ([288fa38](https://github.com/oska-salova/ai-for-developers-project-387/commit/288fa3845e699b7a08ff44cdab9513f9fa6aff8e))
+
 ## [1.2.0](https://github.com/oska-salova/ai-for-developers-project-386/compare/call-calendar-backend-v1.1.0...call-calendar-backend-v1.2.0) (2026-11-02)
 
 
