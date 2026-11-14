@@ -2,6 +2,8 @@ import cors from "cors";
 import express, { type Express } from "express";
 import type { components } from "./generated/openapi.js";
 import {
+  MEETING_NOT_FOUND_MESSAGE,
+  MEETING_PAST_MESSAGE,
   MEETING_TYPE_NOT_FOUND_MESSAGE,
   parseMeetingFields,
   parseMeetingStart,
@@ -213,6 +215,28 @@ export function createApp({ store, now }: AppDependencies): Express {
     };
 
     res.status(201).json(body);
+  });
+
+  app.delete("/api/meetings/:id", (req, res) => {
+    // The current moment is read once: it decides both the 404 and the delete.
+    const currentMoment = now();
+    const meeting = store.findMeeting(req.params.id);
+
+    if (meeting === undefined) {
+      res.status(404).json(errorEnvelope(ERROR_CODES.notFound, MEETING_NOT_FOUND_MESSAGE));
+
+      return;
+    }
+
+    if (meeting.start.getTime() <= currentMoment.getTime()) {
+      res.status(404).json(errorEnvelope(ERROR_CODES.notFound, MEETING_PAST_MESSAGE));
+
+      return;
+    }
+
+    store.deleteMeeting(meeting.id);
+
+    res.status(204).end();
   });
 
   app.use((_req, res) => {

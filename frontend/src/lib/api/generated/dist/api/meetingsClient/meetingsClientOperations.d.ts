@@ -20,3 +20,13 @@ export interface CreateOptions extends OperationOptions {
  * @param {CreateOptions} [options]
  */
 export declare function create(client: MeetingsClientContext, body: CreateMeetingRequest, options?: CreateOptions): Promise<MeetingCreatedBody | ErrorBodyEnvelope>;
+export interface CancelOptions extends OperationOptions {
+}
+/**
+ * Отмена предстоящей встречи владельцем.
+ *
+ * @param {MeetingsClientContext} client
+ * @param {string} id
+ * @param {CancelOptions} [options]
+ */
+export declare function cancel(client: MeetingsClientContext, id: string, options?: CancelOptions): Promise<void | ErrorBodyEnvelope>;

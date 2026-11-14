@@ -282,6 +282,135 @@ describe("список встреч: GET /api/meetings", () => {
   });
 });
 
+describe("отмена встречи: DELETE /api/meetings/:id", () => {
+  it("answers 204 without a body and removes only the chosen meeting", async () => {
+    const { app, store } = makeListApp([
+      { type: "coffee", start: "2026-11-02T07:00:00.000Z" },
+      { type: "project", start: "2026-11-03T10:00:00.000Z" },
+    ]);
+    const [target, neighbor] = store.listMeetings();
+
+    if (target === undefined || neighbor === undefined) {
+      throw new Error("Не удалось подготовить встречи");
+    }
+
+    const response = await request(app).delete(`/api/meetings/${target.id}`);
+
+    expect(response.status).toBe(204);
+    expect(response.text).toBe("");
+    expect(store.listMeetings().map((meeting) => meeting.id)).toEqual([neighbor.id]);
+  });
+
+  it("frees the slot for the next booking immediately", async () => {
+    const { app, store, coffee } = makeListApp([
+      { type: "coffee", start: "2026-11-01T10:00:00.000Z" },
+    ]);
+    const target = store.listMeetings()[0];
+
+    if (target === undefined) {
+      throw new Error("Не удалось подготовить встречу");
+    }
+
+    const before = await request(app).get(`/api/meeting-types/${coffee.id}/slots`);
+    const busySlot = before.body.days
+      .flatMap((day: { slots: { start: string; available: boolean }[] }) => day.slots)
+      .find((slot: { start: string }) => slot.start === "2026-11-01T10:00:00.000Z");
+
+    expect(busySlot).toEqual({ start: "2026-11-01T10:00:00.000Z", available: false });
+
+    const response = await request(app).delete(`/api/meetings/${target.id}`);
+
+    expect(response.status).toBe(204);
+
+    const after = await request(app).get(`/api/meeting-types/${coffee.id}/slots`);
+    const freeSlot = after.body.days
+      .flatMap((day: { slots: { start: string; available: boolean }[] }) => day.slots)
+      .find((slot: { start: string }) => slot.start === "2026-11-01T10:00:00.000Z");
+
+    expect(freeSlot).toEqual({ start: "2026-11-01T10:00:00.000Z", available: true });
+  });
+
+  it("answers 404 not_found for an unknown meeting", async () => {
+    const { app } = makeListApp();
+
+    const response = await request(app).delete("/api/meetings/missing");
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: { code: "not_found", message: "Встреча не найдена" },
+    });
+  });
+
+  it("answers 404 not_found for a meeting that already started or passed", async () => {
+    const { app, store } = makeListApp([
+      { type: "coffee", start: "2026-11-01T08:00:00.000Z" },
+      { type: "coffee", start: now.toISOString() },
+    ]);
+
+    for (const meeting of store.listMeetings()) {
+      const response = await request(app).delete(`/api/meetings/${meeting.id}`);
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({
+        error: { code: "not_found", message: "Встреча уже прошла" },
+      });
+    }
+
+    expect(store.listMeetings()).toHaveLength(2);
+  });
+
+  it("answers 404 on a repeated cancellation of an already deleted meeting", async () => {
+    const { app, store } = makeListApp([{ type: "coffee", start: "2026-11-02T07:00:00.000Z" }]);
+    const target = store.listMeetings()[0];
+
+    if (target === undefined) {
+      throw new Error("Не удалось подготовить встречу");
+    }
+
+    const first = await request(app).delete(`/api/meetings/${target.id}`);
+    const second = await request(app).delete(`/api/meetings/${target.id}`);
+
+    expect(first.status).toBe(204);
+    expect(second.status).toBe(404);
+    expect(second.body).toEqual({
+      error: { code: "not_found", message: "Встреча не найдена" },
+    });
+  });
+
+  it("reads the current moment exactly once per request", async () => {
+    const store = createStore();
+    const coffee = store.createMeetingType({
+      name: "Кофе с гостем",
+      description: "",
+      durationMinutes: 30,
+    });
+    const added = store.addMeeting({
+      meetingTypeId: coffee.id,
+      start: new Date("2026-11-02T07:00:00.000Z"),
+      guestName: "Гость",
+      guestEmail: "guest@example.com",
+    });
+
+    if (!added.ok) {
+      throw new Error("Не удалось подготовить встречу");
+    }
+
+    let calls = 0;
+    const app = createApp({
+      store,
+      now: () => {
+        calls += 1;
+
+        return now;
+      },
+    });
+
+    await request(app).delete(`/api/meetings/${added.meeting.id}`);
+
+    expect(calls).toBe(1);
+  });
+});
+
 describe("валидация полей встречи", () => {
   const typeId = "type-id";
 

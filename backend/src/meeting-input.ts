@@ -17,6 +17,10 @@ export const SLOT_CONFLICT_MESSAGE = "Это время уже заняли";
 
 export const MEETING_TYPE_NOT_FOUND_MESSAGE = "Тип встречи не найден";
 
+export const MEETING_NOT_FOUND_MESSAGE = "Встреча не найдена";
+
+export const MEETING_PAST_MESSAGE = "Встреча уже прошла";
+
 const MAX_GUEST_NAME_LENGTH = 100;
 const MAX_GUEST_EMAIL_LENGTH = 254;
 

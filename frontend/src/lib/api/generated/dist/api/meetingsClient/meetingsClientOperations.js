@@ -59,3 +59,33 @@ export async function create(client, body, options) {
     throw createRestError(response);
 }
 ;
+/**
+ * Отмена предстоящей встречи владельцем.
+ *
+ * @param {MeetingsClientContext} client
+ * @param {string} id
+ * @param {CancelOptions} [options]
+ */
+export async function cancel(client, id, options) {
+    const path = parse("/api/meetings/{id}").expand({
+        id: id
+    });
+    const httpRequestOptions = {
+        headers: {},
+    };
+    const response = await client.pathUnchecked(path).delete(httpRequestOptions);
+    if (typeof options?.operationOptions?.onResponse === "function") {
+        options?.operationOptions?.onResponse(response);
+    }
+    if (+response.status === 204 && !response.body) {
+        return;
+    }
+    if (+response.status === 404 && response.headers["content-type"]?.includes("application/json")) {
+        return jsonErrorBodyEnvelopeToApplicationTransform(response.body);
+    }
+    if (+response.status === 500 && response.headers["content-type"]?.includes("application/json")) {
+        return jsonErrorBodyEnvelopeToApplicationTransform(response.body);
+    }
+    throw createRestError(response);
+}
+;

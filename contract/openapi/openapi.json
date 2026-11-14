@@ -225,6 +225,47 @@
           }
         }
       }
+    },
+    "/api/meetings/{id}": {
+      "delete": {
+        "operationId": "Meetings_cancel",
+        "description": "Отмена предстоящей встречи владельцем.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Успешная отмена встречи: ответ без тела."
+          },
+          "404": {
+            "description": "Ответ на неизвестный маршрут или отсутствующий ресурс.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ответ на непредвиденную ошибку сервера; подробности наружу не отдаются.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

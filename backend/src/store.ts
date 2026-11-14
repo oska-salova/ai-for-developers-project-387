@@ -51,6 +51,12 @@ export interface MeetingTypeStore {
   createMeetingType(input: NewMeetingType): MeetingType;
   findMeetingType(id: string): MeetingType | undefined;
   listMeetings(): Meeting[];
+  findMeeting(id: string): Meeting | undefined;
+  /**
+   * Removes a meeting by id in one synchronous call, so the slot it held is
+   * free for the next booking as soon as this returns.
+   */
+  deleteMeeting(id: string): Meeting | undefined;
   /**
    * Checks the interval against every existing meeting and inserts it in one
    * synchronous call. The duration always comes from the meeting type.
@@ -77,6 +83,20 @@ export function createStore(seed: StoreSeed = {}): MeetingTypeStore {
     },
     listMeetings() {
       return [...meetings];
+    },
+    findMeeting(id) {
+      return meetings.find((meeting) => meeting.id === id);
+    },
+    deleteMeeting(id) {
+      const index = meetings.findIndex((meeting) => meeting.id === id);
+
+      if (index === -1) {
+        return undefined;
+      }
+
+      const [removed] = meetings.splice(index, 1);
+
+      return removed;
     },
     addMeeting(input) {
       const meetingType = meetingTypes.find((type) => type.id === input.meetingTypeId);

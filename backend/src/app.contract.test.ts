@@ -50,7 +50,7 @@ function loadDocument(): Promise<DocumentObject> {
 
 async function validateResponse(
   path: string,
-  method: "get" | "post",
+  method: "get" | "post" | "delete",
   status: number,
   body: unknown,
 ): Promise<void> {
@@ -65,7 +65,8 @@ async function validateResponse(
     responses: operation.responses as ValidatorArgs["responses"],
     components: document.components as ValidatorArgs["components"],
   });
-  const error: unknown = validator.validateResponse(status, body);
+  // A 204 has no body at all; supertest still reports `{}` for an empty text.
+  const error: unknown = validator.validateResponse(status, status === 204 ? null : body);
 
   if (error !== undefined) {
     throw new Error(JSON.stringify(error));
@@ -107,6 +108,7 @@ function makeMeetingsApp() {
 
   return {
     app: createApp({ store, now: () => new Date("2026-11-01T09:00:00.000Z") }),
+    store,
     meetingTypeId: meetingType.id,
   };
 }
@@ -122,6 +124,8 @@ function makeThrowingApp() {
     createMeetingType: failing,
     findMeetingType: failing,
     listMeetings: failing,
+    findMeeting: failing,
+    deleteMeeting: failing,
     addMeeting: failing,
   };
 
@@ -298,6 +302,46 @@ describe("contract compliance", () => {
     await validateResponse("/api/meetings", "post", response.status, response.body);
   });
 
+  it("validates the 204 response of DELETE /api/meetings/{id}", async () => {
+    const { app, meetingTypeId } = makeMeetingsApp();
+
+    const created = await request(app).post("/api/meetings").send(validMeeting(meetingTypeId));
+    const response = await request(app).delete(`/api/meetings/${created.body.meeting.id}`);
+
+    expect(response.status).toBe(204);
+    expect(response.text).toBe("");
+    await validateResponse("/api/meetings/{id}", "delete", response.status, response.body);
+  });
+
+  it("validates the 404 body of DELETE /api/meetings/{id} for an unknown meeting", async () => {
+    const { app } = makeMeetingsApp();
+
+    const response = await request(app).delete("/api/meetings/missing");
+
+    expect(response.status).toBe(404);
+    await validateResponse("/api/meetings/{id}", "delete", response.status, response.body);
+  });
+
+  it("validates the 404 body of DELETE /api/meetings/{id} for a past meeting", async () => {
+    const { app, store, meetingTypeId } = makeMeetingsApp();
+    store.addMeeting({
+      meetingTypeId,
+      start: new Date("2026-10-31T10:00:00.000Z"),
+      guestName: "Гость",
+      guestEmail: "guest@example.com",
+    });
+    const pastMeeting = store.listMeetings()[0];
+
+    if (pastMeeting === undefined) {
+      throw new Error("Не удалось подготовить прошедшую встречу");
+    }
+
+    const response = await request(app).delete(`/api/meetings/${pastMeeting.id}`);
+
+    expect(response.status).toBe(404);
+    await validateResponse("/api/meetings/{id}", "delete", response.status, response.body);
+  });
+
   describe("internal errors", () => {
     it("validates the 500 body of GET /api/meeting-types", async () => {
       const response = await request(makeThrowingApp()).get("/api/meeting-types");
@@ -347,6 +391,14 @@ describe("contract compliance", () => {
       expect(response.status).toBe(500);
       expect(response.body).toMatchObject({ error: { code: "internal_error" } });
       await validateResponse("/api/meetings", "post", response.status, response.body);
+    });
+
+    it("validates the 500 body of DELETE /api/meetings/{id}", async () => {
+      const response = await request(makeThrowingApp()).delete("/api/meetings/id");
+
+      expect(response.status).toBe(500);
+      expect(response.body).toMatchObject({ error: { code: "internal_error" } });
+      await validateResponse("/api/meetings/{id}", "delete", response.status, response.body);
     });
   });
 });
