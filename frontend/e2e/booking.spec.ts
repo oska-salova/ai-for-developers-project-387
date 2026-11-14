@@ -166,4 +166,18 @@ test("owner creates a type, a guest books a slot and the owner sees the meeting"
   await page.getByRole("button", { name: "Подтвердить запись" }).click();
 
   await expect(page.getByRole("heading", { name: "Вы записаны" })).toBeVisible();
+
+  // 9. The owner sees the rebooked meeting with the same guest.
+  await page.goto("/meetings");
+  const rebookedMeeting = page
+    .getByRole("main")
+    .getByRole("listitem")
+    .filter({ hasText: guestName });
+  await expect(rebookedMeeting).toHaveCount(1);
+  await expect(rebookedMeeting).toContainText(typeName);
+  await expect(rebookedMeeting).toContainText(time);
+  await expect(rebookedMeeting.getByRole("link", { name: guestEmail })).toHaveAttribute(
+    "href",
+    `mailto:${guestEmail}`,
+  );
 });
