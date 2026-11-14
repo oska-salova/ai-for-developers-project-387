@@ -129,4 +129,41 @@ test("owner creates a type, a guest books a slot and the owner sees the meeting"
     "href",
     `mailto:${guestEmail}`,
   );
+
+  // 7. The owner cancels the meeting through the confirmation dialog.
+  await meeting.getByRole("button", { name: "Отменить", exact: true }).click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Отменить встречу?");
+  await expect(dialog).toContainText("Время встречи снова станет свободным для записи.");
+  await dialog.getByRole("button", { name: "Отменить встречу" }).click();
+
+  await expect(page.getByText("Встреча отменена")).toBeVisible();
+  await expect(meeting).toHaveCount(0);
+
+  // 8. The guest books the freed slot again, without a slot conflict.
+  await page.goto("/booking");
+  await page.getByRole("button").filter({ hasText: typeName }).click();
+  await page.getByRole("button", { name: "Далее" }).click();
+
+  const freedDay = page
+    .getByRole("group", { name: "Дни записи" })
+    .getByRole("button", { name: new RegExp(`^${date}, `, "u") });
+  await expect(freedDay).toHaveCount(1);
+  await freedDay.click();
+
+  const freedSlot = page
+    .getByRole("group", { name: "Слоты дня" })
+    .getByRole("button", { name: time, exact: true });
+  await expect(freedSlot).toBeEnabled();
+  await freedSlot.click();
+
+  await page.getByRole("button", { name: "Далее" }).click();
+  await expect(page.getByRole("heading", { name: "Укажите имя и почту" })).toBeVisible();
+  await page.getByLabel("Имя", { exact: true }).fill(guestName);
+  await page.getByLabel("Почта", { exact: true }).fill(guestEmail);
+  await page.getByRole("button", { name: "Далее" }).click();
+  await page.getByRole("button", { name: "Подтвердить запись" }).click();
+
+  await expect(page.getByRole("heading", { name: "Вы записаны" })).toBeVisible();
 });
