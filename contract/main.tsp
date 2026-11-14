@@ -160,6 +160,11 @@ model MeetingCreatedResponse {
   @body body: MeetingCreatedBody;
 }
 
+/** Успешная отмена встречи: ответ без тела. */
+model MeetingDeletedResponse {
+  @statusCode statusCode: 204;
+}
+
 /** Ответ на попытку занять уже занятый слот; без данных о чужой встрече. */
 model SlotConflictResponse {
   @statusCode statusCode: 409;
@@ -202,6 +207,12 @@ interface Meetings {
     | NotFoundResponse
     | SlotConflictResponse
     | InternalErrorResponse;
+
+  /** Отмена предстоящей встречи владельцем. */
+  @delete
+  @route("/{id}")
+  cancel(@path id: string):
+    MeetingDeletedResponse | NotFoundResponse | InternalErrorResponse;
 }
 
 @route("/api/meeting-types")

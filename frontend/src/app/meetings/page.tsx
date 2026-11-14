@@ -9,8 +9,9 @@ async function MeetingsContent() {
   // prerendered nor cached: every visit shows the meetings still ahead.
   await connection();
   const meetings = await listMeetings();
+  const now = new Date().toISOString();
 
-  return <MeetingsList meetings={meetings} />;
+  return <MeetingsList meetings={meetings} now={now} />;
 }
 
 export default function MeetingsPage() {

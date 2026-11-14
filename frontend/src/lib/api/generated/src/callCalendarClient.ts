@@ -9,6 +9,8 @@ import {
   type MeetingsClientOptions,
 } from "./api/meetingsClient/meetingsClientContext.js";
 import {
+  cancel,
+  type CancelOptions,
   create,
   type CreateOptions,
   list,
@@ -69,5 +71,8 @@ export class MeetingsClient {
   };
   async create(body: CreateMeetingRequest, options?: CreateOptions) {
     return create(this.#context, body, options);
+  };
+  async cancel(id: string, options?: CancelOptions) {
+    return cancel(this.#context, id, options);
   }
 }

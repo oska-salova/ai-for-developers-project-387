@@ -1,6 +1,6 @@
 import { createCallCalendarClientContext, } from "./api/callCalendarClientContext.js";
 import { createMeetingsClientContext, } from "./api/meetingsClient/meetingsClientContext.js";
-import { create, list, } from "./api/meetingsClient/meetingsClientOperations.js";
+import { cancel, create, list, } from "./api/meetingsClient/meetingsClientOperations.js";
 import { createMeetingTypesClientContext, } from "./api/meetingTypesClient/meetingTypesClientContext.js";
 import { create as create_2, list as list_2, slots, } from "./api/meetingTypesClient/meetingTypesClientOperations.js";
 export class CallCalendarClient {
@@ -43,5 +43,9 @@ export class MeetingsClient {
     ;
     async create(body, options) {
         return create(this.#context, body, options);
+    }
+    ;
+    async cancel(id, options) {
+        return cancel(this.#context, id, options);
     }
 }

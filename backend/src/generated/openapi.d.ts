@@ -57,6 +57,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/meetings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Отмена предстоящей встречи владельцем. */
+        delete: operations["Meetings_cancel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -388,6 +405,44 @@ export interface operations {
             };
             /** @description Ответ на попытку занять уже занятый слот; без данных о чужой встрече. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyEnvelope"];
+                };
+            };
+            /** @description Ответ на непредвиденную ошибку сервера; подробности наружу не отдаются. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyEnvelope"];
+                };
+            };
+        };
+    };
+    Meetings_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Успешная отмена встречи: ответ без тела. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Ответ на неизвестный маршрут или отсутствующий ресурс. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
