@@ -27,7 +27,7 @@ interface MeetingDay {
 interface MeetingsListProps {
   meetings: Meeting[];
   /** The server moment, so past meetings never offer a cancellation. */
-  now?: string;
+  now: string;
 }
 
 function groupByOwnerDay(meetings: Meeting[]): MeetingDay[] {
@@ -55,68 +55,68 @@ function groupByOwnerDay(meetings: Meeting[]): MeetingDay[] {
     }));
 }
 
-function isUpcoming(meeting: Meeting, now: string | undefined): boolean {
-  return now === undefined || Date.parse(meeting.start) > Date.parse(now);
+function isUpcoming(meeting: Meeting, now: string): boolean {
+  return Date.parse(meeting.start) > Date.parse(now);
 }
 
 /** Upcoming meetings grouped by the owner's days, days and starts ascending. */
 export function MeetingsList({ meetings, now }: MeetingsListProps) {
   const router = useRouter();
   const [cancelledIds, setCancelledIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [target, setTarget] = useState<Meeting | null>(null);
+  const [meetingToCancel, setMeetingToCancel] = useState<Meeting | null>(null);
   const [pending, setPending] = useState(false);
 
-  const visible = meetings.filter((meeting) => !cancelledIds.has(meeting.id));
+  const remaining = meetings.filter((meeting) => !cancelledIds.has(meeting.id));
   const cancelableIds = new Set(
-    visible.filter((meeting) => isUpcoming(meeting, now)).map((meeting) => meeting.id),
+    remaining.filter((meeting) => isUpcoming(meeting, now)).map((meeting) => meeting.id),
   );
 
   async function confirmCancel() {
-    if (pending || target === null) {
+    if (pending || meetingToCancel === null) {
       return;
     }
 
-    const meeting = target;
+    const meeting = meetingToCancel;
 
     setPending(true);
 
     try {
       await deleteMeeting(meeting.id);
       setCancelledIds((previous) => new Set(previous).add(meeting.id));
-      setTarget(null);
+      setMeetingToCancel(null);
       toast.success("Встреча отменена");
       router.refresh();
     } catch (error) {
-      setTarget(null);
+      setMeetingToCancel(null);
       toast.error(error instanceof ApiError ? error.message : "Не удалось отменить встречу");
     } finally {
       setPending(false);
     }
   }
 
-  if (visible.length === 0) {
+  if (remaining.length === 0) {
     return <MeetingsEmptyState />;
   }
 
   return (
     <>
       <div className="flex flex-col gap-6">
-        {groupByOwnerDay(visible).map((day) => (
+        {groupByOwnerDay(remaining).map((day) => (
           <MeetingDayGroup
             key={day.key}
             label={day.label}
             meetings={day.meetings}
             cancelableIds={cancelableIds}
-            onCancel={setTarget}
+            onCancel={setMeetingToCancel}
           />
         ))}
       </div>
 
       <AlertDialog
-        open={target !== null}
+        open={meetingToCancel !== null}
         onOpenChange={(open) => {
           if (!open && !pending) {
-            setTarget(null);
+            setMeetingToCancel(null);
           }
         }}
       >

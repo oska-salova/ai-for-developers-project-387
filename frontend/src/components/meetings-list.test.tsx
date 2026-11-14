@@ -26,7 +26,9 @@ function meeting(id: string, start: string, durationMinutes = 30): Meeting {
   };
 }
 
-function renderList(meetings: Meeting[], now?: string) {
+const NOW = "2026-11-01T00:00:00.000Z";
+
+function renderList(meetings: Meeting[], now = NOW) {
   return render(
     <>
       <MeetingsList meetings={meetings} now={now} />
@@ -51,14 +53,10 @@ describe("MeetingsList", () => {
   });
 
   it("groups meetings by owner days, ascending, and keeps the starts in order", () => {
-    render(
-      <MeetingsList
-        meetings={[
-          meeting("late", "2026-11-02T09:00:00.000Z"),
-          meeting("first", "2026-11-01T10:00:00.000Z"),
-        ]}
-      />,
-    );
+    renderList([
+      meeting("late", "2026-11-02T09:00:00.000Z"),
+      meeting("first", "2026-11-01T10:00:00.000Z"),
+    ]);
 
     const headings = screen.getAllByRole("heading", { level: 2 });
 
@@ -69,16 +67,12 @@ describe("MeetingsList", () => {
   });
 
   it("puts a meeting after Moscow midnight into the next day", () => {
-    render(
-      <MeetingsList
-        meetings={[
-          // 23:30 on 1 November in Moscow.
-          meeting("evening", "2026-11-01T20:30:00.000Z"),
-          // 00:30 on 2 November in Moscow, although still 1 November in UTC.
-          meeting("midnight", "2026-11-01T21:30:00.000Z"),
-        ]}
-      />,
-    );
+    renderList([
+      // 23:30 on 1 November in Moscow.
+      meeting("evening", "2026-11-01T20:30:00.000Z"),
+      // 00:30 on 2 November in Moscow, although still 1 November in UTC.
+      meeting("midnight", "2026-11-01T21:30:00.000Z"),
+    ]);
 
     const [firstDay, secondDay] = screen.getAllByRole("heading", { level: 2 });
 
@@ -103,14 +97,10 @@ describe("MeetingsList", () => {
   });
 
   it("renders one row per meeting with its own data", () => {
-    render(
-      <MeetingsList
-        meetings={[
-          meeting("morning", "2026-11-01T07:00:00.000Z"),
-          meeting("afternoon", "2026-11-01T13:00:00.000Z"),
-        ]}
-      />,
-    );
+    renderList([
+      meeting("morning", "2026-11-01T07:00:00.000Z"),
+      meeting("afternoon", "2026-11-01T13:00:00.000Z"),
+    ]);
 
     expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
       expect.stringContaining("10:00–10:30"),
@@ -123,7 +113,7 @@ describe("MeetingsList", () => {
   });
 
   it("shows the empty state instead of an empty list", () => {
-    render(<MeetingsList meetings={[]} />);
+    renderList([]);
 
     expect(screen.getByText("Предстоящих встреч нет")).toBeInTheDocument();
     expect(
@@ -154,6 +144,17 @@ describe("MeetingsList", () => {
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Не отменять" }));
+
+    await waitFor(() => expect(screen.queryByText("Отменить встречу?")).not.toBeInTheDocument());
+    expect(deleteMeeting).not.toHaveBeenCalled();
+    expect(screen.getByText("Гость future")).toBeInTheDocument();
+  });
+
+  it("leaves the list untouched when the dialog is closed without confirming", async () => {
+    renderList([meeting("future", "2026-11-02T09:00:00.000Z")], "2026-11-01T09:00:00.000Z");
+
+    fireEvent.click(within(rowOf("Гость future")).getByRole("button", { name: "Отменить" }));
+    fireEvent.keyDown(document, { key: "Escape" });
 
     await waitFor(() => expect(screen.queryByText("Отменить встречу?")).not.toBeInTheDocument());
     expect(deleteMeeting).not.toHaveBeenCalled();

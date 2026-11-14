@@ -310,6 +310,7 @@ describe("contract compliance", () => {
 
     expect(response.status).toBe(204);
     expect(response.text).toBe("");
+    expect(response.headers["content-type"]).toBeUndefined();
     await validateResponse("/api/meetings/{id}", "delete", response.status, response.body);
   });
 
@@ -324,19 +325,18 @@ describe("contract compliance", () => {
 
   it("validates the 404 body of DELETE /api/meetings/{id} for a past meeting", async () => {
     const { app, store, meetingTypeId } = makeMeetingsApp();
-    store.addMeeting({
+    const added = store.addMeeting({
       meetingTypeId,
       start: new Date("2026-10-31T10:00:00.000Z"),
       guestName: "Гость",
       guestEmail: "guest@example.com",
     });
-    const pastMeeting = store.listMeetings()[0];
 
-    if (pastMeeting === undefined) {
+    if (!added.ok) {
       throw new Error("Не удалось подготовить прошедшую встречу");
     }
 
-    const response = await request(app).delete(`/api/meetings/${pastMeeting.id}`);
+    const response = await request(app).delete(`/api/meetings/${added.meeting.id}`);
 
     expect(response.status).toBe(404);
     await validateResponse("/api/meetings/{id}", "delete", response.status, response.body);
