@@ -209,6 +209,28 @@ Playwright и `head-sha.txt` с полным head SHA, ссылкой на пр�
   отменяет предыдущий. Вручную: `gh workflow run docs-audit.yml -f dry_run=true` — только
   артефакт, без issue.
 
+#### Результаты прогонов аудита документации
+
+Механизм проверен на живом прогоне
+[43678100989](https://github.com/oska-salova/ai-for-developers-project-387/actions/runs/43678100989)
+15 ноября 2026 года: пять находок, issue
+[#51](https://github.com/oska-salova/ai-for-developers-project-387/issues/51).
+
+| Прогон                                                                                               | Находок | Issue                                                                         |
+| ---------------------------------------------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------- |
+| [43678100989](https://github.com/oska-salova/ai-for-developers-project-387/actions/runs/43678100989) | 5       | [#51](https://github.com/oska-salova/ai-for-developers-project-387/issues/51) |
+
+Расхождения настоящие, а не учебные: README перечисляет права джобы авторевью как
+`pull-requests: read`, тогда как `.github/workflows/opencode-review.yml` запрашивает `write`;
+`AGENTS.md` называет дефолтом API `localhost`, а `frontend/src/lib/api.ts` — `127.0.0.1`;
+в `docs/agents/domain.md` указаны имена ADR, которых в репозитории нет.
+
+README хранит только этот показательный прогон. Дальше результаты не ведутся: источник истины —
+открытые issue с меткой
+[`documentation`](https://github.com/oska-salova/ai-for-developers-project-387/issues?q=label%3Adocumentation)
+и история прогонов в Actions. Список в README неизбежно устарел бы, а аудит ищет ровно такие
+расхождения.
+
 ## Использование
 
 В приложении два типа пользователей: владелец календаря (задаёт типы встреч и смотрит записи)
