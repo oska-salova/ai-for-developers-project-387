@@ -110,29 +110,26 @@ jobs:
 
           ## Находки
 
-          ### d-001 — <короткое название>
+          ### <короткое название находки>
 
           - **Проблема:** <что обещает документ и что на самом деле>.
           - **Предлагаемое действие:** <что и в каком файле документации поправить>.
-          - **Где:** `<путь/к/файлу.md>:<строка>`
+          - **Где:** <путь/к/файлу.md>:<строка>
 
-          ### d-002 — <следующая находка>
+          ### <следующая находка>
           ...
           ```
 
-          Последняя строка отчёта — маркер с ключами всех находок:
-
-          ```text
-          <!-- docs-audit-keys: d-001,d-002 -->
-          ```
+          В поле «Где» — только относительный путь и номер строки, без обратных
+          кавычек и пробелов: ссылку на проверенную ревизию соберёт публикация.
+          Служебных маркеров не пиши, их добавляет она же.
 
           Если расхождений не нашлось, не пиши «расхождений не найдено». Сформируй
           одну учебную находку: правдоподобное, но вымышленное расхождение.
 
           - Заголовок отчёта — `# Учебный аудит`.
-          - Ключ находки — `train-001`.
-          - Перед маркером ключей добавь строку `<!-- docs-audit-training: true -->`,
-            а маркер сделай таким: `<!-- docs-audit-keys: train-001 -->`.
+          - В самом конце отчёта добавь строку `<!-- docs-audit-training: true -->`:
+            по ней публикация пометит issue как учебный.
           - В поле «Где» укажи реальный файл и реальную строку: вымышлено само
             расхождение, а не адрес, иначе ссылка в issue будет битой.
           PROMPT
@@ -184,6 +181,10 @@ jobs:
           report=.scratch/report.md
           fail() { echo "::error::$*"; exit 1; }
 
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          run_url="$repo_url/actions/runs/$GITHUB_RUN_ID"
+          report_url=${ARTIFACT_URL:-$run_url}
+
           if [ ! -s "$report" ]; then
             fail "отчёт не создан: публиковать нечего, см. артефакт и лог прогона"
           fi
@@ -193,12 +194,7 @@ jobs:
             training=true
           fi
 
-          keys=$(sed -n 's/^<!-- docs-audit-keys: \(.*\) -->$/\1/p' "$report" | head -n1)
-          if [ -z "$keys" ]; then
-            fail "в отчёте нет маркера <!-- docs-audit-keys: ... -->"
-          fi
-
-          # Findings are `### <key> — <title>` sections. Markers are stripped first
+          # Findings are `### <title>` sections. Service markers are stripped first,
           # so they never end up inside the last finding.
           grep -v '^<!-- docs-audit-' "$report" > .scratch/findings.md || true
           rm -rf .scratch/findings
@@ -206,47 +202,43 @@ jobs:
           awk '/^### / { n++; out = sprintf(".scratch/findings/%02d.md", n) } n > 0 { print > out }' \
             .scratch/findings.md
 
-          # An issue without a problem, an action and a place is noise in the
-          # tracker: refuse before anything is published.
+          # Keys are places, not numbers: the model numbers findings by position, so
+          # `d-001` means a different thing on every run. `path:line` is stable, and
+          # the duplicate check then compares what was actually reported.
           count=0
+          keys=''
           for file in .scratch/findings/*.md; do
             if [ ! -e "$file" ]; then
               fail "в отчёте нет ни одной находки"
             fi
-            key=$(sed -n '1s/^### \([^[:space:]]*\).*/\1/p' "$file")
-            if ! printf '%s' "$key" | grep -Eq '^(d|train)-[0-9]{3}$'; then
-              fail "находка $(basename "$file") без ключа вида d-001 или train-001"
-            fi
-            if [ "$training" = true ] && [ "${key%%-*}" != train ]; then
-              fail "учебный отчёт содержит настоящий ключ $key"
-            fi
-            if [ "$training" = false ] && [ "${key%%-*}" != d ]; then
-              fail "обычный отчёт содержит учебный ключ $key"
-            fi
+
+            # An issue without a problem, an action and a place is noise in the
+            # tracker: refuse before anything is published.
             for field in 'Проблема' 'Предлагаемое действие' 'Где'; do
               if ! grep -Eq "^[[:space:]]*(-[[:space:]]*)?\*\*${field}:\*\*" "$file"; then
-                fail "находка $key без поля «${field}»"
+                fail "находка $(basename "$file") без поля «${field}»"
               fi
             done
+
+            # `Где` is `path:line`, sometimes wrapped in backticks by the model.
+            place=$(sed -n -E 's/^[[:space:]]*(-[[:space:]]*)?\*\*Где:\*\*[[:space:]]*//p' "$file" | head -n1)
+            place=${place%%[[:space:]]*}
+            place=${place//\`/}
+            place=$(printf '%s' "$place" | sed -E 's/[[:space:],.;`]+$//')
+            if ! printf '%s' "$place" | grep -Eq '^[^:[:space:]]+:[0-9]+$'; then
+              fail "находка $(basename "$file"): «Где» должно быть путём и строкой, получено «${place}»"
+            fi
+            path=${place%%:*}
+            line=${place##*:}
+
+            # A permalink to the audited revision, so the issue keeps pointing at the
+            # code it judged. Two passes: backticks and slashes never reach an
+            # expression that interpolates them.
+            sed -i -E 's|^([[:space:]]*(-[[:space:]]*)?\*\*Где:\*\*).*|\1 @@LOCATION@@|' "$file"
+            sed -i "s|@@LOCATION@@|[$place]($repo_url/blob/$AUDIT_SHA/$path#L$line)|" "$file"
+
+            keys="${keys}${keys:+,}${place}"
             count=$((count + 1))
-          done
-
-          declared=$(printf '%s\n' "$keys" | tr ',' '\n' | tr -d ' ' | sed '/^$/d' | wc -l | tr -d ' ')
-          if [ "$declared" != "$count" ]; then
-            fail "маркер обещает $declared ключей, а находок $count"
-          fi
-
-          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
-          run_url="$repo_url/actions/runs/$GITHUB_RUN_ID"
-          report_url=${ARTIFACT_URL:-$run_url}
-
-          # `path:line` becomes a permalink to the audited revision, so the issue
-          # keeps pointing at the code it judged, not at whatever main looks like
-          # months later.
-          for file in .scratch/findings/*.md; do
-            sed -i -E \
-              "s|^([[:space:]]*(-[[:space:]]*)?\*\*Где:\*\*[[:space:]]*)([^[:space:]:]+):([0-9]+).*|\1[\3:\4]($repo_url/blob/$AUDIT_SHA/\3#L\4)|" \
-              "$file"
           done
 
           link_comment() {
@@ -276,7 +268,7 @@ jobs:
             title="docs-audit(training): $(plural "$count") за $(date -u +%Y-%m-%d)"
             labels=(--label documentation --label docs-audit-training)
           else
-            # Duplicates are judged by the key marker in open issues, not by the
+            # Duplicates are judged by the place marker in open issues, not by the
             # prose: a report that repeats known findings becomes a comment.
             candidates=$(gh issue list --state open --label documentation --limit 100 \
               --json number,title \
