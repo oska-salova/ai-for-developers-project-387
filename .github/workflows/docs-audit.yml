@@ -206,7 +206,7 @@ jobs:
           # `d-001` means a different thing on every run. `path:line` is stable, and
           # the duplicate check then compares what was actually reported.
           count=0
-          keys=''
+          : > .scratch/places
           for file in .scratch/findings/*.md; do
             if [ ! -e "$file" ]; then
               fail "в отчёте нет ни одной находки"
@@ -237,7 +237,7 @@ jobs:
             sed -i -E 's|^([[:space:]]*(-[[:space:]]*)?\*\*Где:\*\*).*|\1 @@LOCATION@@|' "$file"
             sed -i "s|@@LOCATION@@|[$place]($repo_url/blob/$AUDIT_SHA/$path#L$line)|" "$file"
 
-            keys="${keys}${keys:+,}${place}"
+            printf '%s|%s\n' "$file" "$place" >> .scratch/places
             count=$((count + 1))
           done
 
@@ -252,6 +252,12 @@ jobs:
               *) echo 'находок' ;;
             esac
           }
+
+          # The issue body carries only the findings that are actually published;
+          # `keys` is their place marker, `skipped` — how many repeats were dropped.
+          skipped=0
+          cut -d'|' -f1 .scratch/places > .scratch/publish-findings.txt
+          keys=$(cut -d'|' -f2 .scratch/places | tr '\n' ',' | sed 's/,$//')
 
           # One open training issue at most: a weekly cron would otherwise fill
           # the tracker with demo reports on a clean repository.
@@ -269,7 +275,9 @@ jobs:
             labels=(--label documentation --label docs-audit-training)
           else
             # Duplicates are judged by the place marker in open issues, not by the
-            # prose: a report that repeats known findings becomes a comment.
+            # prose. A report that repeats known places becomes a comment; a report
+            # with anything new is published without the repeats, so a reframed
+            # finding does not drag its old copies back into the tracker.
             candidates=$(gh issue list --state open --label documentation --limit 100 \
               --json number,title \
               --jq '.[] | select(.title | startswith("docs-audit:")) | .number' | sort -n)
@@ -285,15 +293,24 @@ jobs:
               )
               seen+=$'\n'
             done
-            missing=0
-            for key in $(printf '%s' "$keys" | tr ',' ' '); do
-              if ! grep -qxF -- "$key" <<<"$seen"; then
-                missing=1
+            : > .scratch/publish-findings.txt
+            keys=''
+            count=0
+            while IFS='|' read -r file place; do
+              if grep -qxF -- "$place" <<<"$seen"; then
+                continue
               fi
-            done
-            if [ "$missing" = 0 ] && [ -n "$newest" ]; then
+              printf '%s\n' "$file" >> .scratch/publish-findings.txt
+              keys="${keys}${keys:+,}${place}"
+              count=$((count + 1))
+            done < .scratch/places
+            skipped=$(($(wc -l < .scratch/places | tr -d ' ') - count))
+            if [ "$count" = 0 ]; then
+              if [ -z "$newest" ]; then
+                fail "в отчёте нет ни одной находки"
+              fi
               gh issue comment "$newest" --body "$(link_comment)"
-              echo "все находки уже есть в #$newest"
+              echo "все места уже есть в открытых аудитах: #$newest"
               exit 0
             fi
             title="docs-audit: $count $(plural "$count") за $(date -u +%Y-%m-%d)"
@@ -306,9 +323,13 @@ jobs:
               printf '> Исправлять нечего: реальных проблем в документации этот прогон не нашёл.\n\n'
             fi
             printf '## Находки\n\n'
-            for file in .scratch/findings/*.md; do
+            if [ "$skipped" -gt 0 ]; then
+              printf '> Без повторов: %s %s уже записаны в открытых аудитах.\n\n' \
+                "$skipped" "$(plural "$skipped" | sed 's/находка/место/; s/находки/места/; s/находок/мест/')"
+            fi
+            while IFS= read -r file; do
               printf '%s\n\n' "$(cat "$file")"
-            done
+            done < .scratch/publish-findings.txt
             printf '## Отчёт\n\n'
             printf -- '- [Артефакт прогона](%s)\n' "$report_url"
             printf -- '- [Прогон](%s)\n\n' "$run_url"
