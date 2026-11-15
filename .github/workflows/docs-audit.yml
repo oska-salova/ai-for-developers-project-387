@@ -1,0 +1,327 @@
+name: Docs Audit
+
+# Weekly audit of the documentation against the code. The agent reads the docs,
+# writes a report to `.scratch/report.md`, and a separate step publishes it: the
+# model never holds a token that can write to the tracker or to the repository.
+#
+# A clean audit still produces a report with one invented "training" finding, so
+# the publishing path is exercised end to end. Such an issue is marked by the
+# `docs-audit(training):` prefix, the `docs-audit-training` label and a warning
+# block in the first line.
+#
+# The CLI is called directly (`opencode run`) instead of using the GitHub action:
+# the action asserts write permission of the event actor, and a scheduled run has
+# no such actor. Publishing is our own step, the same way the review publishes its
+# verdict. https://opencode.ai/docs/cli/
+
+on:
+  schedule:
+    # Monday, 06:23 UTC. GitHub delays scheduled runs by minutes and starts them
+    # only from the default branch; neither matters for a weekly audit.
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Только артефакт: issue и комментарии не создаются"
+        type: boolean
+        default: false
+
+# Start from nothing: the job grants only what it needs.
+permissions: {}
+
+concurrency:
+  # One audit at a time: a manual run and the scheduled one would report on the
+  # same main. A newer run cancels the stale one, and a cancelled run publishes
+  # nothing — a cancelled report is already outdated. Nothing is pushed here, so
+  # cancellation cannot lose a commit.
+  group: docs-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    # 25 minutes for the model plus room for the upload and the publication.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Reading issues for the duplicate check, creating labels, issues and
+      # comments afterwards.
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          # The audit never pushes: keep the token out of .git/config.
+          persist-credentials: false
+
+      # The report must stay out of commits: `.scratch/` is ignored. If someone
+      # removes that line, fail before the model is called instead of leaving the
+      # report in the working tree.
+      - name: Ensure the report stays untracked
+        run: |
+          set -euo pipefail
+          if ! git check-ignore -q .scratch/report.md; then
+            echo "::error::.scratch/ не в .gitignore — отчёт может попасть в коммит"
+            exit 1
+          fi
+
+      # Pinned through npm: the registry verifies the tarball, while the curl
+      # installer would execute an unverified script with this job's token.
+      - name: Install OpenCode CLI
+        run: |
+          set -euo pipefail
+          npm install --global opencode-ai@1.19.5
+
+      # The prompt lives in a file: it is too long for a command-line argument.
+      - name: Write the audit prompt
+        run: |
+          mkdir -p .scratch
+          cat > .scratch/prompt.md <<'PROMPT'
+          Ты — аудитор документации проекта «Календарь звонков». Код писать не нужно:
+          ты сверяешь документацию с тем, что реально лежит в репозитории.
+
+          Проверь на ревизии `${{ github.sha }}`:
+          - `README.md`, `AGENTS.md`, `GLOSSARY.md`, `docs/agents/`, `docs/adr/`,
+            `REVIEW.md`, `contract/README.md`;
+          - команды и настройки: `mise.toml`, `package.json` в пакетах, `hk.pkl`,
+            `.github/workflows/`;
+          - проверяемые факты: порты, пути, имена файлов и воркфлоу, переменные
+            окружения, названия тестов и каталогов, сгенерированные файлы.
+
+          Ищи только расхождения между документацией и кодом: документ обещает то,
+          чего нет, называет неверный путь, порт, команду или имя файла, описывает
+          удалённое поведение. Стиль, орфографию и полноту разделов не оценивай.
+
+          Ограничения:
+          - ничего не меняй и не запускай `git`, `gh`, `mise`, сборку и тесты:
+            только чтение;
+          - не больше пяти находок; если их больше, оставь пять самых заметных;
+          - имена файлов, пакетов, команд и переменных — в обратных кавычках;
+          - людей через `@` не упоминай;
+          - ссылки не вставляй: в поле «Где» нужен только относительный путь и номер
+            строки, ссылку соберёт шаг публикации.
+
+          Запиши результат в `.scratch/report.md` строго в таком виде:
+
+          ```markdown
+          # Аудит документации <дата> @ <sha>
+
+          ## Находки
+
+          ### d-001 — <короткое название>
+
+          - **Проблема:** <что обещает документ и что на самом деле>.
+          - **Предлагаемое действие:** <что и в каком файле документации поправить>.
+          - **Где:** `<путь/к/файлу.md>:<строка>`
+
+          ### d-002 — <следующая находка>
+          ...
+          ```
+
+          Последняя строка отчёта — маркер с ключами всех находок:
+
+          ```text
+          <!-- docs-audit-keys: d-001,d-002 -->
+          ```
+
+          Если расхождений не нашлось, не пиши «расхождений не найдено». Сформируй
+          одну учебную находку: правдоподобное, но вымышленное расхождение.
+
+          - Заголовок отчёта — `# Учебный аудит`.
+          - Ключ находки — `train-001`.
+          - Перед маркером ключей добавь строку `<!-- docs-audit-training: true -->`,
+            а маркер сделай таким: `<!-- docs-audit-keys: train-001 -->`.
+          - В поле «Где» укажи реальный файл и реальную строку: вымышлено само
+            расхождение, а не адрес, иначе ссылка в issue будет битой.
+          PROMPT
+
+      - name: Run the audit
+        timeout-minutes: 25
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: |
+          set -euo pipefail
+          # `--auto` approves permission prompts: nobody can answer them in CI and
+          # a hanging run burns the whole timeout.
+          if ! opencode run --model opencode/big-pickle --auto "$(cat .scratch/prompt.md)" \
+              > .scratch/stdout.txt 2>&1; then
+            echo "::warning::CLI завершился с ошибкой; публикую stdout как отчёт"
+          fi
+          if [ ! -s .scratch/report.md ]; then
+            cp .scratch/stdout.txt .scratch/report.md
+          fi
+          sed -E 's/\x1B\[[0-9;]*[mK]//g' .scratch/report.md > .scratch/report.clean
+          mv .scratch/report.clean .scratch/report.md
+          {
+            echo '### Аудит документации'
+            echo
+            cat .scratch/report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Uploaded even when the audit failed: a red report is exactly the artifact
+      # worth opening.
+      - name: Upload the report
+        id: upload
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-audit-report
+          path: .scratch/report.md
+          if-no-files-found: ignore
+          # The issue links to this artifact, so it must outlive the link.
+          retention-days: 90
+
+      - name: Publish the issue
+        if: always() && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          AUDIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          report=.scratch/report.md
+          fail() { echo "::error::$*"; exit 1; }
+
+          if [ ! -s "$report" ]; then
+            fail "отчёт не создан: публиковать нечего, см. артефакт и лог прогона"
+          fi
+
+          training=false
+          if grep -qF '<!-- docs-audit-training: true -->' "$report"; then
+            training=true
+          fi
+
+          keys=$(sed -n 's/^<!-- docs-audit-keys: \(.*\) -->$/\1/p' "$report" | head -n1)
+          if [ -z "$keys" ]; then
+            fail "в отчёте нет маркера <!-- docs-audit-keys: ... -->"
+          fi
+
+          # Findings are `### <key> — <title>` sections. Markers are stripped first
+          # so they never end up inside the last finding.
+          grep -v '^<!-- docs-audit-' "$report" > .scratch/findings.md || true
+          rm -rf .scratch/findings
+          mkdir -p .scratch/findings
+          awk '/^### / { n++; out = sprintf(".scratch/findings/%02d.md", n) } n > 0 { print > out }' \
+            .scratch/findings.md
+
+          # An issue without a problem, an action and a place is noise in the
+          # tracker: refuse before anything is published.
+          count=0
+          for file in .scratch/findings/*.md; do
+            if [ ! -e "$file" ]; then
+              fail "в отчёте нет ни одной находки"
+            fi
+            key=$(sed -n '1s/^### \([^[:space:]]*\).*/\1/p' "$file")
+            if ! printf '%s' "$key" | grep -Eq '^(d|train)-[0-9]{3}$'; then
+              fail "находка $(basename "$file") без ключа вида d-001 или train-001"
+            fi
+            if [ "$training" = true ] && [ "${key%%-*}" != train ]; then
+              fail "учебный отчёт содержит настоящий ключ $key"
+            fi
+            if [ "$training" = false ] && [ "${key%%-*}" != d ]; then
+              fail "обычный отчёт содержит учебный ключ $key"
+            fi
+            for field in 'Проблема' 'Предлагаемое действие' 'Где'; do
+              if ! grep -Eq "^[[:space:]]*(-[[:space:]]*)?\*\*${field}:\*\*" "$file"; then
+                fail "находка $key без поля «${field}»"
+              fi
+            done
+            count=$((count + 1))
+          done
+
+          declared=$(printf '%s\n' "$keys" | tr ',' '\n' | tr -d ' ' | sed '/^$/d' | wc -l | tr -d ' ')
+          if [ "$declared" != "$count" ]; then
+            fail "маркер обещает $declared ключей, а находок $count"
+          fi
+
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          run_url="$repo_url/actions/runs/$GITHUB_RUN_ID"
+          report_url=${ARTIFACT_URL:-$run_url}
+
+          # `path:line` becomes a permalink to the audited revision, so the issue
+          # keeps pointing at the code it judged, not at whatever main looks like
+          # months later.
+          for file in .scratch/findings/*.md; do
+            sed -i -E \
+              "s|^([[:space:]]*(-[[:space:]]*)?\*\*Где:\*\*[[:space:]]*)([^[:space:]:]+):([0-9]+).*|\1[\3:\4]($repo_url/blob/$AUDIT_SHA/\3#L\4)|" \
+              "$file"
+          done
+
+          link_comment() {
+            printf 'Новый прогон аудита: [артефакт](%s), [прогон](%s)\n' "$report_url" "$run_url"
+          }
+
+          plural() {
+            case "$1" in
+              1) echo 'находка' ;;
+              2 | 3 | 4) echo 'находки' ;;
+              *) echo 'находок' ;;
+            esac
+          }
+
+          # One open training issue at most: a weekly cron would otherwise fill
+          # the tracker with demo reports on a clean repository.
+          if [ "$training" = true ]; then
+            target=$(gh issue list --state open --label docs-audit-training --limit 100 \
+              --json number --jq '.[].number' | sort -n | tail -n1)
+            if [ -n "$target" ]; then
+              gh issue comment "$target" --body "$(link_comment)"
+              echo "учебный issue уже открыт: #$target"
+              exit 0
+            fi
+            gh label create docs-audit-training --force --color e4e669 \
+              --description 'Учебный отчёт аудита документации: расхождение вымышлено'
+            title="docs-audit(training): $(plural "$count") за $(date -u +%Y-%m-%d)"
+            labels=(--label documentation --label docs-audit-training)
+          else
+            # Duplicates are judged by the key marker in open issues, not by the
+            # prose: a report that repeats known findings becomes a comment.
+            candidates=$(gh issue list --state open --label documentation --limit 100 \
+              --json number,title \
+              --jq '.[] | select(.title | startswith("docs-audit:")) | .number' | sort -n)
+            newest=$(printf '%s\n' "$candidates" | sed '/^$/d' | tail -n1)
+            seen=''
+            for number in $candidates; do
+              body=$(gh issue view "$number" --json body --jq .body)
+              seen+=$(
+                printf '%s\n' "$body" \
+                  | sed -n 's/.*<!-- docs-audit-keys: \(.*\) -->.*/\1/p' \
+                  | tr ',' '\n' \
+                  | tr -d ' '
+              )
+              seen+=$'\n'
+            done
+            missing=0
+            for key in $(printf '%s' "$keys" | tr ',' ' '); do
+              if ! grep -qxF -- "$key" <<<"$seen"; then
+                missing=1
+              fi
+            done
+            if [ "$missing" = 0 ] && [ -n "$newest" ]; then
+              gh issue comment "$newest" --body "$(link_comment)"
+              echo "все находки уже есть в #$newest"
+              exit 0
+            fi
+            title="docs-audit: $count $(plural "$count") за $(date -u +%Y-%m-%d)"
+            labels=(--label documentation)
+          fi
+
+          {
+            if [ "$training" = true ]; then
+              printf '> **Учебный отчёт.** Расхождение придумано, чтобы проверить пайплайн аудита.\n'
+              printf '> Исправлять нечего: реальных проблем в документации этот прогон не нашёл.\n\n'
+            fi
+            printf '## Находки\n\n'
+            for file in .scratch/findings/*.md; do
+              printf '%s\n\n' "$(cat "$file")"
+            done
+            printf '## Отчёт\n\n'
+            printf -- '- [Артефакт прогона](%s)\n' "$report_url"
+            printf -- '- [Прогон](%s)\n\n' "$run_url"
+            printf '<!-- docs-audit-keys: %s -->\n' "$keys"
+          } > .scratch/issue.md
+
+          issue_url=$(gh issue create --title "$title" "${labels[@]}" --body-file .scratch/issue.md)
+          echo "::notice::создан issue $issue_url"

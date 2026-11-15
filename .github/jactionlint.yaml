@@ -21,3 +21,9 @@ ignores:
     rule: adhoc-packages
     reason: "opencode CLI pinned to 1.19.5; npm verifies the tarball"
     expires: "2027-06-30"
+  # Same reasoning as the reviewer above: the weekly audit needs the CLI in one
+  # job, and the version is pinned exactly.
+  - file: ".github/workflows/docs-audit.yml"
+    rule: adhoc-packages
+    reason: "opencode CLI pinned to 1.19.5; npm verifies the tarball"
+    expires: "2027-06-30"
